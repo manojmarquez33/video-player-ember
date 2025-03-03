@@ -42,11 +42,11 @@ h1 {
 }
 
 /* Show controls when hovering over the video container or controls */
-.video-container:hover .video-controls,
-.video-controls:hover {
-    opacity: 1;
-    pointer-events: auto;
-}
+    .video-container:hover .video-controls,
+    .video-controls:hover {
+        opacity: 1;
+        pointer-events: auto;
+    }
 
 .video-wrapper {
     position: relative;

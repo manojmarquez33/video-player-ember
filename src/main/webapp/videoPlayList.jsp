@@ -30,7 +30,7 @@
     <meta charset="UTF-8">
     <title>Video Playlist</title>
     <link rel="stylesheet" type="text/css" href="css/style.css">
-    <link rel="icon" type="image/png" href="./VideoPlayer/images/video-player.png">
+        <link rel="icon" type="image/png" href="./VideoPlayer/images/video-player.png">
 </head>
 <body>
 
@@ -194,7 +194,14 @@ videoBar.addEventListener("input", function () {
         }
         loadeadTime += videoDurations[i];
     }
-});
+});       document.getElementById("playPause").addEventListener("click", PlayPause);
+        document.getElementById("skipForward").addEventListener("click", skipForward);
+        document.getElementById("skipBackward").addEventListener("click", skipBackward);
+        document.getElementById("fastRewind").addEventListener("click", fastRewind);
+        document.getElementById("fastForward").addEventListener("click", fastForward);
+        document.getElementById("playbackSpeed").addEventListener("change", setPlayBackRate);
+        document.getElementById("volumeBar").addEventListener("input", setVolume);
+        document.getElementById("fullscreen").addEventListener("click", activeFullScreen);
 
        videoPlayer.addEventListener("timeupdate", function () {
             if (isSeeking) return;

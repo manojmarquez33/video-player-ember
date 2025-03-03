@@ -8,7 +8,7 @@ let intervalForward;
 const totalTime = document.getElementById("totalTime");
 const videoBar = document.getElementById("videoBar");
 
-let totalTimeValue = sessionStorage.getItem("holeListTotalTime");
+let totalTimeValue = sessionStorage.getItem("holeListTotalTime");   
 
 if (totalTimeValue) {
     totalTimeValue = parseFloat(totalTimeValue);
@@ -201,78 +201,78 @@ function convertBlackAndWhite() {
     }
 }
 
-  let drag = false;
-  let initialX, initialY;
-  let moveX = 0, moveY = 0;
-  let curZoom = 1;
-  const maxZoom = 3.0;
-  const minZoom = 1.0;
-
-  function zoomIn() {
-      if (curZoom < maxZoom) {
-          curZoom += 0.1;
-          updateTransform();
-      }
-  }
-
-  function zoomOut() {
-      if (curZoom > minZoom) {
-          curZoom -= 0.1;
-          updateTransform();
-      }
-  }
-
-  function updateTransform() {
-      updateDragMove();
-      videoPlayer.style.transform = `translate(${moveX}px, ${moveY}px) scale(${curZoom})`;
-      videoPlayer.style.transformOrigin = "center center";
-  }
-
-  function updateDragMove() {
-      const wrapperWidth = videoPlayer.parentElement.clientWidth;
-      const wrapperHeight = videoPlayer.parentElement.clientHeight;
-
-      const videoWidth = wrapperWidth * curZoom;
-      const videoHeight = wrapperHeight * curZoom;
-
-      const maxMoveX = (videoWidth - wrapperWidth) / 2;
-      const maxMoveY = (videoHeight - wrapperHeight) / 2;
-
-      if (videoWidth > wrapperWidth) {
-          moveX = Math.max(-maxMoveX, Math.min(moveX, maxMoveX));
-      } else {
-          moveX = 0;
-      }
-      if (videoHeight > wrapperHeight) {
-          moveY = Math.max(-maxMoveY, Math.min(moveY, maxMoveY));
-      } else {
-          moveY = 0;
-      }
-  }
-
-
-  videoPlayer.addEventListener("mousedown", (e) => {
-      if (curZoom > 1) {
-          drag = true;
-          initialX = e.clientX - moveX;
-          initialY = e.clientY - moveY;
-          videoPlayer.style.cursor = "grabbing";
-          e.preventDefault();
-      }
-  });
-
-  document.addEventListener("mousemove", (e) => {
-      if (drag) {
-          moveX = e.clientX - initialX;
-          moveY = e.clientY - initialY;
-          updateTransform();
-      }
-  });
-
-  document.addEventListener("mouseup", () => {
-      drag = false;
-      videoPlayer.style.cursor = "grab";
-  });
+          let drag = false;
+          let initialX, initialY;
+          let moveX = 0, moveY = 0;
+          let curZoom = 1;
+          const maxZoom = 3.0;
+          const minZoom = 1.0;
+    
+          function zoomIn() {
+              if (curZoom < maxZoom) {
+                  curZoom += 0.1;
+                  updateTransform();
+              }
+          }
+    
+          function zoomOut() {
+              if (curZoom > minZoom) {
+                  curZoom -= 0.1;
+                  updateTransform();
+              }
+          }
+    
+          function updateTransform() {
+              updateDragMove();
+              videoPlayer.style.transform = `translate(${moveX}px, ${moveY}px) scale(${curZoom})`;
+              videoPlayer.style.transformOrigin = "center center";
+          }
+    
+          function updateDragMove() {
+              const wrapperWidth = videoPlayer.parentElement.clientWidth;
+              const wrapperHeight = videoPlayer.parentElement.clientHeight;
+    
+              const videoWidth = wrapperWidth * curZoom;
+              const videoHeight = wrapperHeight * curZoom;
+    
+              const maxMoveX = (videoWidth - wrapperWidth) / 2;
+              const maxMoveY = (videoHeight - wrapperHeight) / 2;
+    
+              if (videoWidth > wrapperWidth) {
+                  moveX = Math.max(-maxMoveX, Math.min(moveX, maxMoveX));
+              } else {
+                  moveX = 0;
+              }
+              if (videoHeight > wrapperHeight) {
+                  moveY = Math.max(-maxMoveY, Math.min(moveY, maxMoveY));
+              } else {
+                  moveY = 0;
+              }
+          }
+    
+    
+          videoPlayer.addEventListener("mousedown", (e) => {
+              if (curZoom > 1) {
+                  drag = true;
+                  initialX = e.clientX - moveX;
+                  initialY = e.clientY - moveY;
+                  videoPlayer.style.cursor = "grabbing";
+                  e.preventDefault();
+              }
+          });
+    
+          document.addEventListener("mousemove", (e) => {
+              if (drag) {
+                  moveX = e.clientX - initialX;
+                  moveY = e.clientY - initialY;
+                  updateTransform();
+              }
+          });
+    
+          document.addEventListener("mouseup", () => {
+              drag = false;
+              videoPlayer.style.cursor = "grab";
+          });
 
 
   const playPause = document.getElementById("playPause");
