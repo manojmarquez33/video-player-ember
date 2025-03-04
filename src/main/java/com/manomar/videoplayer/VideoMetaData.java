@@ -43,7 +43,7 @@ public class VideoMetaData {
         }
         return videoArray;
     }
-    
+
     private static JSONObject getSingleVideo(ResultSet rs) throws SQLException {
         JSONObject video = new JSONObject();
         String fileName = rs.getString("file_name");
@@ -68,5 +68,50 @@ public class VideoMetaData {
 
         return video;
     }
+
+    public static boolean isVideoInDatabase(String fileName) {
+        String sql = "SELECT COUNT(*) FROM videos WHERE file_name = ?";
+        boolean exists = false;
+
+        try (Connection conn = DatabaseConnect.getConnection();
+             PreparedStatement stmt = conn.prepareStatement(sql)) {
+            stmt.setString(1, fileName);
+
+            ResultSet rs = stmt.executeQuery();
+            if (rs.next()) {
+                exists = rs.getInt(1) > 0;
+            }
+        } catch (SQLException | ClassNotFoundException e) {
+            e.printStackTrace();
+        }
+
+        System.out.println("Video exists in DB (" + fileName + "): " + exists);
+        return exists;
+    }
+
+    public static void insertVideoMetadata(String fileName, double size, long lastModified, boolean subtitleAvailable) {
+
+//        String sql = "INSERT INTO videos (file_name, file_extension, size, last_modified, subtitle_available) " +
+//                "VALUES (?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE size = VALUES(size), last_modified = VALUES(last_modified)";
+
+        String sql = "INSERT INTO videos VALUES (?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE size = VALUES(size), last_modified = VALUES(last_modified)";
+
+        System.out.println("Executing SQL: " + sql);
+        System.out.println("Inserting Video: " + fileName + " | Size: " + size + "MB | Last Modified: " + lastModified);
+
+        try (Connection conn = DatabaseConnect.getConnection();
+             PreparedStatement stmt = conn.prepareStatement(sql)) {
+
+            stmt.setString(1, fileName);
+            stmt.setString(2, fileName.substring(fileName.lastIndexOf(".") + 1));
+            stmt.setDouble(3, size);
+            stmt.setLong(4, lastModified);
+            stmt.setBoolean(5, subtitleAvailable);
+
+        } catch (SQLException | ClassNotFoundException e) {
+            e.printStackTrace();
+        }
+    }
+
 }
 
