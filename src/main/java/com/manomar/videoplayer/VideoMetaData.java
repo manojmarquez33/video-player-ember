@@ -1,117 +1,147 @@
-package com.manomar.videoplayer;
+        package com.manomar.videoplayer;
+        
+        import com.manomar.videoplayer.DatabaseConnect;
+        import org.json.JSONArray;
+        import org.json.JSONObject;
+        import java.io.File;
+        import java.net.URLEncoder;
+        import java.sql.*;
+        import java.io.UnsupportedEncodingException;
+        
+        import static com.manomar.videoplayer.PlaylistServlet.convertToTimestamp;
+        
+        
+        public class VideoMetaData {
 
-import com.manomar.videoplayer.DatabaseConnect;
-import org.json.JSONArray;
-import org.json.JSONObject;
-import java.io.File;
-import java.net.URLEncoder;
-import java.sql.*;
-import java.io.UnsupportedEncodingException;
+            public static JSONObject getVideoByName(String fileName) {
+                String sql = "SELECT m.*, COALESCE(v.subtitle_available, 0) AS subtitle_available " +
+                        "FROM media m " +
+                        "LEFT JOIN videos v ON m.id = v.media_id " +
+                        "WHERE m.file_name = ? AND m.file_name LIKE '%.mp4'";
 
-
-public class VideoMetaData {
-
-    public static JSONObject getVideoByName(String fileName) {
-        String sql = "SELECT * FROM videos WHERE file_name = ?";
-
-        try (Connection conn = DatabaseConnect.getConnection();
-             PreparedStatement stmt = conn.prepareStatement(sql)) {
-            stmt.setString(1, fileName);
-            ResultSet rs = stmt.executeQuery();
-            if (rs.next()) {
-                return getSingleVideo(rs);
+                try (Connection conn = DatabaseConnect.getConnection();
+                     PreparedStatement stmt = conn.prepareStatement(sql)) {
+                    stmt.setString(1, fileName);
+                    ResultSet rs = stmt.executeQuery();
+                    if (rs.next()) {
+                        return getSingleVideo(rs);
+                    }
+                } catch (SQLException | ClassNotFoundException e) {
+                    e.printStackTrace();
+                }
+                return null;
             }
-        } catch (SQLException | ClassNotFoundException e) {
-            e.printStackTrace();
-        }
-        return null;
-    }
 
-    public static JSONArray getAllVideoDetails() {
-        JSONArray videoArray = new JSONArray();
-        String sql = "SELECT * FROM videos";
+            public static JSONArray getAllVideoDetails() {
+                JSONArray videoArray = new JSONArray();
+                String sql = "SELECT m.*, COALESCE(v.subtitle_available, 0) AS subtitle_available " +
+                        "FROM media m " +
+                        "LEFT JOIN videos v ON m.id = v.media_id " +
+                        "WHERE m.file_name LIKE '%.mp4'";
 
-        try (Connection conn = DatabaseConnect.getConnection();
-             PreparedStatement stmt = conn.prepareStatement(sql);
-             ResultSet rs = stmt.executeQuery()) {
+                try (Connection conn = DatabaseConnect.getConnection();
+                     PreparedStatement stmt = conn.prepareStatement(sql);
+                     ResultSet rs = stmt.executeQuery()) {
 
-            while (rs.next()) {
-                videoArray.put(getSingleVideo(rs));
+                    while (rs.next()) {
+                        videoArray.put(getSingleVideo(rs));
+                    }
+                } catch (SQLException | ClassNotFoundException e) {
+                    e.printStackTrace();
+                }
+                return videoArray;
             }
-        } catch (SQLException | ClassNotFoundException e) {
-            e.printStackTrace();
-        }
-        return videoArray;
-    }
 
-    private static JSONObject getSingleVideo(ResultSet rs) throws SQLException {
-        JSONObject video = new JSONObject();
-        String fileName = rs.getString("file_name");
+            private static JSONObject getSingleVideo(ResultSet rs) throws SQLException {
+                JSONObject video = new JSONObject();
+                String fileName = rs.getString("file_name");
 
-        video.put("fileName", fileName);
-        video.put("fileExtension", rs.getString("file_extension"));
-        video.put("size", String.format("%.2f MB", rs.getDouble("size")));
-        video.put("daysAgo", (System.currentTimeMillis() - rs.getLong("last_modified")) / (1000 * 3600 * 24));
+                video.put("fileName", fileName);
+                video.put("size", String.format("%.2f MB", rs.getDouble("size")));
 
-        try {
-            video.put("url", AppConfig.VIDEO_API + URLEncoder.encode(fileName, "UTF-8"));
 
-            if (rs.getBoolean("subtitle_available")) {
-                video.put("subtitleUrl", AppConfig.SUBTITLE_API + URLEncoder.encode(fileName, "UTF-8"));
-            } else {
-                video.put("subtitleUrl", JSONObject.NULL);
+                Timestamp timestamp = rs.getTimestamp("last_modified");
+                long lastModified = (timestamp != null) ? timestamp.getTime() : System.currentTimeMillis();
+                video.put("lastModified", lastModified);
+
+
+                long daysAgo = (System.currentTimeMillis() - lastModified) / (1000L * 60 * 60 * 24);
+                daysAgo = Math.max(daysAgo, 1);
+                video.put("createdAgo", daysAgo + " day" + (daysAgo > 1 ? "s" : "") + " ago");
+
+                try {
+                    video.put("url", AppConfig.VIDEO_API + URLEncoder.encode(fileName, "UTF-8").replace("+", "%20"));
+
+                    boolean subtitleAvailable = rs.getBoolean("subtitle_available");
+                    video.put("subtitleUrl", subtitleAvailable ? AppConfig.SUBTITLE_API + URLEncoder.encode(fileName, "UTF-8") : JSONObject.NULL);
+                } catch (UnsupportedEncodingException e) {
+                    video.put("url", JSONObject.NULL);
+                    video.put("subtitleUrl", JSONObject.NULL);
+                }
+
+                return video;
             }
-        } catch (java.io.UnsupportedEncodingException e) {
-            video.put("url", JSONObject.NULL);
-            video.put("subtitleUrl", JSONObject.NULL);
-        }
 
-        return video;
-    }
-
-    public static boolean isVideoInDatabase(String fileName) {
-        String sql = "SELECT COUNT(*) FROM videos WHERE file_name = ?";
-        boolean exists = false;
-
-        try (Connection conn = DatabaseConnect.getConnection();
-             PreparedStatement stmt = conn.prepareStatement(sql)) {
-            stmt.setString(1, fileName);
-
-            ResultSet rs = stmt.executeQuery();
-            if (rs.next()) {
-                exists = rs.getInt(1) > 0;
+            public static boolean isVideoInDatabase(String fileName) {
+                String sql = "SELECT COUNT(*) FROM media WHERE file_name = ?";
+                boolean exists = false;
+        
+                try (Connection conn = DatabaseConnect.getConnection();
+                     PreparedStatement stmt = conn.prepareStatement(sql)) {
+                    stmt.setString(1, fileName);
+        
+                    ResultSet rs = stmt.executeQuery();
+                    if (rs.next()) {
+                        exists = rs.getInt(1) > 0;
+                    }
+                } catch (SQLException | ClassNotFoundException e) {
+                    e.printStackTrace();
+                }
+        
+                System.out.println("Video exists in DB (" + fileName + "): " + exists);
+                return exists;
             }
-        } catch (SQLException | ClassNotFoundException e) {
-            e.printStackTrace();
+
+            public static void insertVideoMetadata(String fileName, double size, long lastModified, boolean subtitleAvailable) {
+
+                String sql = "INSERT INTO media (file_name, size, last_modified) " +
+                        "VALUES (?, ?, ?) " +
+                        "ON DUPLICATE KEY UPDATE size = VALUES(size), last_modified = VALUES(last_modified)";
+
+                String sql1 = "INSERT INTO videos (media_id, subtitle_available) " +
+                        "VALUES ((SELECT id FROM media WHERE file_name = ?), ?) " +
+                        "ON DUPLICATE KEY UPDATE subtitle_available = VALUES(subtitle_available)";
+
+                try (Connection conn = DatabaseConnect.getConnection();
+                     PreparedStatement stmt = conn.prepareStatement(sql);
+                     PreparedStatement stmt1 = conn.prepareStatement(sql1)) {
+
+
+                    stmt.setString(1, fileName);
+                    stmt.setDouble(2, size);
+                    stmt.setTimestamp(3, convertToTimestamp(lastModified));
+
+                    int rowsAffected = stmt.executeUpdate();
+                    if (rowsAffected > 0) {
+                        System.out.println(" Successfully inserted/updated video in DB: " + fileName);
+                    } else {
+                        System.err.println("No rows inserted for: " + fileName);
+                    }
+
+                    stmt1.setString(1, fileName);
+                    stmt1.setBoolean(2, subtitleAvailable);
+
+                    int subtitleRows = stmt1.executeUpdate();
+                    if (subtitleRows > 0) {
+                        System.out.println("Subtitle information updated for: " + fileName);
+                    } else {
+                        System.err.println("No subtitle update for: " + fileName);
+                    }
+
+                } catch (SQLException | ClassNotFoundException e) {
+                    e.printStackTrace();
+                }
+            }
+
         }
-
-        System.out.println("Video exists in DB (" + fileName + "): " + exists);
-        return exists;
-    }
-
-    public static void insertVideoMetadata(String fileName, double size, long lastModified, boolean subtitleAvailable) {
-
-//        String sql = "INSERT INTO videos (file_name, file_extension, size, last_modified, subtitle_available) " +
-//                "VALUES (?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE size = VALUES(size), last_modified = VALUES(last_modified)";
-
-        String sql = "INSERT INTO videos VALUES (?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE size = VALUES(size), last_modified = VALUES(last_modified)";
-
-        System.out.println("Executing SQL: " + sql);
-        System.out.println("Inserting Video: " + fileName + " | Size: " + size + "MB | Last Modified: " + lastModified);
-
-        try (Connection conn = DatabaseConnect.getConnection();
-             PreparedStatement stmt = conn.prepareStatement(sql)) {
-
-            stmt.setString(1, fileName);
-            stmt.setString(2, fileName.substring(fileName.lastIndexOf(".") + 1));
-            stmt.setDouble(3, size);
-            stmt.setLong(4, lastModified);
-            stmt.setBoolean(5, subtitleAvailable);
-
-        } catch (SQLException | ClassNotFoundException e) {
-            e.printStackTrace();
-        }
-    }
-
-}
-
+        
