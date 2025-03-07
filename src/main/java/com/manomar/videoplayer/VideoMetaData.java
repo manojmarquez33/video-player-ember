@@ -55,7 +55,8 @@
             private static JSONObject getSingleVideo(ResultSet rs) throws SQLException {
                 JSONObject video = new JSONObject();
                 String fileName = rs.getString("file_name");
-
+                int id = rs.getInt("id");
+                video.put("id", id);
                 video.put("fileName", fileName);
                 video.put("size", String.format("%.2f MB", rs.getDouble("size")));
 

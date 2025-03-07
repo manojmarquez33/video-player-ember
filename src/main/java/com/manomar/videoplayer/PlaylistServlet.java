@@ -70,6 +70,8 @@ public class PlaylistServlet extends HttpServlet {
             while (rs.next()) {
                 JSONObject videoObject = new JSONObject();
 
+//                int id = rs.getInt("id");
+//                videoObject.put("id",id);
                 videoObject.put("fileName", rs.getString("file_name"));
                 videoObject.put("size", String.format("%.2f MB", rs.getDouble("size")));
 

@@ -29,6 +29,9 @@ public class VideoServlet extends HttpServlet {
         enableCORS(response);
 
         String fileName = request.getParameter("video");
+        String metadataOnly = request.getParameter("metadata");
+        String searchQuery = request.getParameter("search");
+        String playlistName = request.getParameter("playlist");
 
         if (request.getParameter("likeStatus") != null) {
             if (fileName == null || fileName.trim().isEmpty()) {
@@ -39,16 +42,6 @@ public class VideoServlet extends HttpServlet {
             return;
         }
 
-
-        String metadataOnly = request.getParameter("metadata");
-        String searchQuery = request.getParameter("search");
-        String playlistName = request.getParameter("playlist");
-
-
-        if (request.getParameter("likeStatus") != null) {
-            returnLikeStatus(response, fileName);
-            return;
-        }
 
         if (searchQuery != null && !searchQuery.isEmpty()) {
             searchVideos(response, searchQuery);
@@ -156,7 +149,7 @@ public class VideoServlet extends HttpServlet {
             return;
         }
 
-        String sql = "SELECT like_status FROM media WHERE file_name = ?";  // ✅ Common for both videos and playlists
+        String sql = "SELECT like_status FROM media WHERE file_name = ?";
         try (Connection conn = DatabaseConnect.getConnection();
              PreparedStatement stmt = conn.prepareStatement(sql)) {
 
