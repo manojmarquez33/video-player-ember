@@ -5,7 +5,9 @@ import jakarta.servlet.annotation.WebServlet;
 import jakarta.servlet.http.HttpServlet;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import jakarta.servlet.http.HttpSession;
 import org.json.JSONArray;
+import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.io.*;
@@ -32,16 +34,24 @@ public class VideoServlet extends HttpServlet {
         String metadataOnly = request.getParameter("metadata");
         String searchQuery = request.getParameter("search");
         String playlistName = request.getParameter("playlist");
+        String username = request.getParameter("username");
+        String mediaIdParam = request.getParameter("mediaId");
 
-        if (request.getParameter("likeStatus") != null) {
-            if (fileName == null || fileName.trim().isEmpty()) {
-                response.sendError(HttpServletResponse.SC_BAD_REQUEST, "Missing video parameter for likeStatus");
+        if (username != null && mediaIdParam != null) {
+            try {
+                int mediaId = Integer.parseInt(mediaIdParam);
+                int userId = getUserIdFromDatabase(username);
+                if (userId == -1) {
+                    response.sendError(HttpServletResponse.SC_BAD_REQUEST, "User not found");
+                    return;
+                }
+                returnLikeStatus(response, userId, mediaId);
+                return;
+            } catch (NumberFormatException e) {
+                response.sendError(HttpServletResponse.SC_BAD_REQUEST, "Invalid media ID");
                 return;
             }
-            returnLikeStatus(response, fileName);
-            return;
         }
-
 
         if (searchQuery != null && !searchQuery.isEmpty()) {
             searchVideos(response, searchQuery);
@@ -58,11 +68,9 @@ public class VideoServlet extends HttpServlet {
         }
 
         if (playlistName != null && !playlistName.isEmpty()) {
-            returnPlaylistVideos(response,playlistName);
+            returnPlaylistVideos(response, playlistName);
             return;
         }
-
-        //getVideoDetails(response);
 
         JSONArray resultArray = fetchAllVideosAndPlaylists();
         if (resultArray != null) {
@@ -74,45 +82,153 @@ public class VideoServlet extends HttpServlet {
         }
     }
 
-    protected void doOptions(HttpServletRequest request, HttpServletResponse response) throws ServletException, IOException {
-        enableCORS(response);
-        response.setStatus(HttpServletResponse.SC_OK);
-    }
-
     protected void doPost(HttpServletRequest request, HttpServletResponse response) throws ServletException, IOException {
         enableCORS(response);
+
         try {
+
             BufferedReader reader = request.getReader();
             StringBuilder requestBody = new StringBuilder();
             String line;
             while ((line = reader.readLine()) != null) {
                 requestBody.append(line);
             }
-            JSONObject jsonObject = new JSONObject(requestBody.toString());
+            reader.close();
 
-            String fileName = jsonObject.getString("video");
-            int likeStatus = jsonObject.getInt("likeStatus");
+            try {
+                JSONObject jsonObject = new JSONObject(requestBody.toString());
+                String username = jsonObject.optString("username", "mano").trim();
 
-            updateLikeStatus(fileName, likeStatus);
 
-            response.setStatus(HttpServletResponse.SC_OK);
-        } catch (Exception e) {
-            e.printStackTrace();
-            response.sendError(HttpServletResponse.SC_BAD_REQUEST, "Invalid request");
+                int mediaId = jsonObject.optInt("mediaId", -1);
+                int likeStatus = jsonObject.optInt("likeStatus", 0);
+
+                if (username.isEmpty()) {
+                    response.sendError(HttpServletResponse.SC_BAD_REQUEST, "User not found");
+                    return;
+                }
+
+                if (mediaId == -1) {
+                    response.sendError(HttpServletResponse.SC_BAD_REQUEST, "Invalid media ID");
+                    return;
+                }
+
+                System.out.println("Received Like Status Update - Username: " + username + ", Media ID: " + mediaId + ", Like Status: " + likeStatus);
+
+                int userId = getUserIdFromDatabase(username);
+                if (userId == -1) {
+                    response.sendError(HttpServletResponse.SC_BAD_REQUEST, "User not found");
+                    return;
+                }
+
+                if (checkIfLikeExists(userId, mediaId)) {
+                    updateLikeStatus(userId, mediaId, likeStatus);
+                } else {
+                    insertLikeStatus(userId, mediaId, likeStatus);
+                }
+
+                response.setStatus(HttpServletResponse.SC_OK);
+                response.getWriter().write("{\"message\": \"Like status updated successfully\"}");
+
+                response.setStatus(HttpServletResponse.SC_OK);
+            } catch (JSONException e) {
+                response.sendError(HttpServletResponse.SC_BAD_REQUEST, "Invalid JSON format: " + e.getMessage());
+            }
+
+        } catch (IOException e) {
+            response.sendError(HttpServletResponse.SC_INTERNAL_SERVER_ERROR, "Error reading request: " + e.getMessage());
         }
     }
 
-    private void updateLikeStatus(String fileName, int likeStatus) {
-        String sql = "UPDATE media SET like_status = ? WHERE file_name = ?";
+
+    private void returnLikeStatus(HttpServletResponse response, int userId, int mediaId) throws IOException {
+        String sql = "SELECT like_status FROM likes WHERE user_id = ? AND media_id = ?";
+
         try (Connection conn = DatabaseConnect.getConnection();
              PreparedStatement stmt = conn.prepareStatement(sql)) {
 
+            stmt.setInt(1, userId);
+            stmt.setInt(2, mediaId);
+            ResultSet rs = stmt.executeQuery();
+
+            JSONObject responseObject = new JSONObject();
+            if (rs.next()) {
+                responseObject.put("likeStatus", rs.getInt("like_status"));
+            } else {
+                responseObject.put("likeStatus", 0);
+            }
+
+            response.setContentType("application/json");
+            response.setCharacterEncoding("UTF-8");
+            response.getWriter().write(responseObject.toString());
+
+        } catch (SQLException | ClassNotFoundException e) {
+            e.printStackTrace();
+            response.sendError(HttpServletResponse.SC_INTERNAL_SERVER_ERROR, "Database error while fetching like status.");
+        }
+    }
+
+    private boolean checkIfLikeExists(int userId, int mediaId) {
+        String sql = "SELECT 1 FROM likes WHERE user_id = ? AND media_id = ?";
+        try (Connection conn = DatabaseConnect.getConnection();
+             PreparedStatement stmt = conn.prepareStatement(sql)) {
+            stmt.setInt(1, userId);
+            stmt.setInt(2, mediaId);
+            ResultSet rs = stmt.executeQuery();
+            return rs.next();
+        } catch (SQLException | ClassNotFoundException e) {
+            e.printStackTrace();
+        }
+        return false;
+    }
+
+    private void updateLikeStatus(int userId, int mediaId, int likeStatus) {
+        String sql = "UPDATE likes SET like_status = ? WHERE user_id = ? AND media_id = ?";
+        try (Connection conn = DatabaseConnect.getConnection();
+             PreparedStatement stmt = conn.prepareStatement(sql)) {
             stmt.setInt(1, likeStatus);
-            stmt.setString(2, fileName);
+            stmt.setInt(2, userId);
+            stmt.setInt(3, mediaId);
             stmt.executeUpdate();
         } catch (SQLException | ClassNotFoundException e) {
             e.printStackTrace();
         }
+    }
+
+
+    private void insertLikeStatus(int userId, int mediaId, int likeStatus) {
+        String sql = "INSERT INTO likes (user_id, media_id, like_status) VALUES (?, ?, ?)";
+        try (Connection conn = DatabaseConnect.getConnection();
+             PreparedStatement stmt = conn.prepareStatement(sql)) {
+            stmt.setInt(1, userId);
+            stmt.setInt(2, mediaId);
+            stmt.setInt(3, likeStatus);
+            stmt.executeUpdate();
+        } catch (SQLException | ClassNotFoundException e) {
+            e.printStackTrace();
+        }
+    }
+
+
+    private int getUserIdFromDatabase(String username) {
+        String sql = "SELECT id FROM users WHERE username = ?";
+        try (Connection conn = DatabaseConnect.getConnection();
+             PreparedStatement stmt = conn.prepareStatement(sql)) {
+            stmt.setString(1, username);
+            ResultSet rs = stmt.executeQuery();
+            if (rs.next()) {
+                return rs.getInt("id");
+            }
+        } catch (SQLException | ClassNotFoundException e) {
+            e.printStackTrace();
+        }
+        return -1;
+    }
+
+
+    protected void doOptions(HttpServletRequest request, HttpServletResponse response) throws ServletException, IOException {
+        enableCORS(response);
+        response.setStatus(HttpServletResponse.SC_OK);
     }
 
     private void checkFile() {
@@ -142,35 +258,6 @@ public class VideoServlet extends HttpServlet {
             }
         }
     }
-
-    private void returnLikeStatus(HttpServletResponse response, String fileName) throws IOException {
-        if (fileName == null || fileName.trim().isEmpty()) {
-            response.sendError(HttpServletResponse.SC_BAD_REQUEST, "Missing video/playlist parameter");
-            return;
-        }
-
-        String sql = "SELECT like_status FROM media WHERE file_name = ?";
-        try (Connection conn = DatabaseConnect.getConnection();
-             PreparedStatement stmt = conn.prepareStatement(sql)) {
-
-            stmt.setString(1, fileName);
-            ResultSet rs = stmt.executeQuery();
-
-            if (rs.next()) {
-                int likeStatus = rs.getInt("like_status");
-                JSONObject result = new JSONObject();
-                result.put("likeStatus", likeStatus);
-                response.setContentType("application/json");
-                response.getWriter().write(result.toString());
-            } else {
-                response.sendError(HttpServletResponse.SC_NOT_FOUND, "Video/Playlist not found");
-            }
-        } catch (SQLException | ClassNotFoundException e) {
-            e.printStackTrace();
-            response.sendError(HttpServletResponse.SC_INTERNAL_SERVER_ERROR, "Database error");
-        }
-    }
-
 
     private void searchVideos(HttpServletResponse response, String searchQuery) throws IOException {
         JSONArray resultArray = new JSONArray();

@@ -113,8 +113,12 @@
                         "VALUES ((SELECT id FROM media WHERE file_name = ?), ?) " +
                         "ON DUPLICATE KEY UPDATE subtitle_available = VALUES(subtitle_available)";
 
+                String sql2 = "INSERT INTO likes (user_id, media_id, like_status) VALUES (?, ?, ?) " +
+                        "ON DUPLICATE KEY UPDATE like_status = VALUES(like_status)";
+
                 try (Connection conn = DatabaseConnect.getConnection();
                      PreparedStatement stmt = conn.prepareStatement(sql);
+                     PreparedStatement stmt2 = conn.prepareStatement(sql2);
                      PreparedStatement stmt1 = conn.prepareStatement(sql1)) {
 
 
@@ -137,6 +141,16 @@
                         System.out.println("Subtitle information updated for: " + fileName);
                     } else {
                         System.err.println("No subtitle update for: " + fileName);
+                    }
+
+                    stmt2.setString(1, fileName);
+                    stmt2.setBoolean(2, subtitleAvailable);
+
+                    int likeRows = stmt1.executeUpdate();
+                    if (likeRows > 0) {
+                        System.out.println("like status updated for: " + fileName);
+                    } else {
+                        System.err.println("No like status update for: " + fileName);
                     }
 
                 } catch (SQLException | ClassNotFoundException e) {

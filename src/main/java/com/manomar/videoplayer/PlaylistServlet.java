@@ -54,49 +54,58 @@ public class PlaylistServlet extends HttpServlet {
 
     public static void returnPlaylistVideos(HttpServletResponse response, String playlistName) {
         JSONArray videoArray = new JSONArray();
+        JSONObject responseJson = new JSONObject();
 
-        String sql = "SELECT pv.video_id, m.file_name, m.size, m.last_modified, v.subtitle_available " +
+        String playlistIdSQL = "SELECT id FROM media WHERE file_name = ?";
+        int playlistId = -1;
+
+        try (Connection conn = DatabaseConnect.getConnection();
+             PreparedStatement stmt = conn.prepareStatement(playlistIdSQL)) {
+
+            stmt.setString(1, playlistName);
+            ResultSet rs = stmt.executeQuery();
+
+            if (rs.next()) {
+                playlistId = rs.getInt("id"); // ✅ Get the playlist ID
+            }
+        } catch (SQLException | ClassNotFoundException e) {
+            e.printStackTrace();
+        }
+
+        String sql = "SELECT m.id, m.file_name, m.size, m.last_modified, v.subtitle_available " +
                 "FROM playlist_videos pv " +
                 "JOIN media m ON pv.video_id = m.id " +
                 "LEFT JOIN videos v ON m.id = v.media_id " +
-                "WHERE pv.playlist_id = (SELECT id FROM media WHERE file_name = ?);";
+                "WHERE pv.playlist_id = ?";
 
         try (Connection conn = DatabaseConnect.getConnection();
              PreparedStatement stmt = conn.prepareStatement(sql)) {
 
-            stmt.setString(1, playlistName);  // Removed .toLowerCase() to match DB case
+            stmt.setInt(1, playlistId);
             ResultSet rs = stmt.executeQuery();
 
             while (rs.next()) {
                 JSONObject videoObject = new JSONObject();
-
-//                int id = rs.getInt("id");
-//                videoObject.put("id",id);
                 videoObject.put("fileName", rs.getString("file_name"));
                 videoObject.put("size", String.format("%.2f MB", rs.getDouble("size")));
-
 
                 Timestamp timestamp = rs.getTimestamp("last_modified");
                 long lastModified = (timestamp != null) ? timestamp.getTime() : System.currentTimeMillis();
                 videoObject.put("lastModified", lastModified);
 
-
                 long daysAgo = (System.currentTimeMillis() - lastModified) / (1000L * 60 * 60 * 24);
                 daysAgo = Math.max(daysAgo, 1);
                 videoObject.put("createdAgo", daysAgo + " day" + (daysAgo > 1 ? "s" : "") + " ago");
 
-
                 String fileName = rs.getString("file_name");
                 String encodedFileName = URLEncoder.encode(fileName, "UTF-8").replace("+", "%20");
                 videoObject.put("url", AppConfig.VIDEO_API + encodedFileName);
-
 
                 boolean subtitleAvailable = rs.getObject("subtitle_available") != null && rs.getBoolean("subtitle_available");
                 videoObject.put("subtitleUrl", subtitleAvailable ? AppConfig.SUBTITLE_API + encodedFileName : JSONObject.NULL);
 
                 videoArray.put(videoObject);
             }
-
         } catch (SQLException | ClassNotFoundException | UnsupportedEncodingException e) {
             e.printStackTrace();
         }
@@ -105,11 +114,10 @@ public class PlaylistServlet extends HttpServlet {
             response.setContentType("application/json");
             response.setCharacterEncoding("UTF-8");
 
-            if (videoArray.isEmpty()) {
-                response.getWriter().write("{\"error\": \"No videos found for this playlist.\"}");
-            } else {
-                response.getWriter().write(videoArray.toString());
-            }
+            responseJson.put("playlist_id", playlistId); // ✅ Include playlist ID
+            responseJson.put("videos", videoArray);
+
+            response.getWriter().write(responseJson.toString());
             response.getWriter().flush();
         } catch (IOException e) {
             e.printStackTrace();
