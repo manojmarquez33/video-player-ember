@@ -2,6 +2,7 @@ package com.manomar.videoplayer;
 
 import jakarta.servlet.ServletException;
 import jakarta.servlet.annotation.WebServlet;
+import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServlet;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -38,8 +39,6 @@ public class LoginServlet extends HttpServlet {
             }
         }
 
-
-
         JSONObject jsonObject = new JSONObject(jsonData.toString());
         String username = jsonObject.getString("username");
         String password = jsonObject.getString("password");
@@ -56,13 +55,30 @@ public class LoginServlet extends HttpServlet {
                         int userId = rs.getInt("id");
 
                         HttpSession session = request.getSession();
+
                         session.setAttribute("userId", userId);
                         session.setAttribute("username", username);
                         session.setMaxInactiveInterval(30 * 60);
 
+                        Cookie username_Cookie = new Cookie("username", username);
+                        Cookie session_Cookie = new Cookie("sessionId", session.getId());
+
+                        username_Cookie.setHttpOnly(false);
+                        session_Cookie.setHttpOnly(false);
+                        username_Cookie.setPath("/");
+                        session_Cookie.setPath("/");
+
+                        int expiry = 24 * 60 * 60;
+                        username_Cookie.setMaxAge(expiry);
+                        session_Cookie.setMaxAge(expiry);
+
+                        response.addCookie(username_Cookie);
+                        response.addCookie(session_Cookie);
+
                         jsonResponse.put("success", true);
                         jsonResponse.put("user", username);
                         jsonResponse.put("sessionId", session.getId());
+
                         response.setStatus(HttpServletResponse.SC_OK);
                     } else {
                         jsonResponse.put("success", false);
@@ -70,6 +86,7 @@ public class LoginServlet extends HttpServlet {
                         response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
                     }
                     response.getWriter().write(jsonResponse.toString());
+                    
                 }
             }
         } catch (SQLException | ClassNotFoundException e) {

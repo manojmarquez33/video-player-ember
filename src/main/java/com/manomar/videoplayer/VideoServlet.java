@@ -97,6 +97,7 @@ public class VideoServlet extends HttpServlet {
 
             try {
                 JSONObject jsonObject = new JSONObject(requestBody.toString());
+
                 String username = jsonObject.optString("username", "mano").trim();
 
 
@@ -142,20 +143,29 @@ public class VideoServlet extends HttpServlet {
 
 
     private void returnLikeStatus(HttpServletResponse response, int userId, int mediaId) throws IOException {
-        String sql = "SELECT like_status FROM likes WHERE user_id = ? AND media_id = ?";
+        String sql = "SELECT " +
+                "(SELECT COUNT(*) FROM likes WHERE media_id = ? AND like_status = 1) AS likeCount, " +
+                "(SELECT COUNT(*) FROM likes WHERE media_id = ? AND like_status = -1) AS dislikeCount, " +
+                "(SELECT like_status FROM likes WHERE user_id = ? AND media_id = ?) AS userLikeStatus";
 
         try (Connection conn = DatabaseConnect.getConnection();
              PreparedStatement stmt = conn.prepareStatement(sql)) {
 
-            stmt.setInt(1, userId);
+            stmt.setInt(1, mediaId);
             stmt.setInt(2, mediaId);
+            stmt.setInt(3, userId);
+            stmt.setInt(4, mediaId);
             ResultSet rs = stmt.executeQuery();
 
             JSONObject responseObject = new JSONObject();
             if (rs.next()) {
-                responseObject.put("likeStatus", rs.getInt("like_status"));
+                responseObject.put("likeCount", rs.getInt("likeCount"));
+                responseObject.put("dislikeCount", rs.getInt("dislikeCount"));
+                responseObject.put("userLikeStatus", rs.getObject("userLikeStatus") != null ? rs.getInt("userLikeStatus") : 0);
             } else {
-                responseObject.put("likeStatus", 0);
+                responseObject.put("likeCount", 0);
+                responseObject.put("dislikeCount", 0);
+                responseObject.put("userLikeStatus", 0);
             }
 
             response.setContentType("application/json");
