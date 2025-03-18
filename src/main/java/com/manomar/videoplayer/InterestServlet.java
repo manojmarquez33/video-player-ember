@@ -32,6 +32,8 @@ public class InterestServlet extends HttpServlet {
                 interestObj.put("id", rs.getInt("id"));
                 interestObj.put("interest_name", rs.getString("interest_name"));
                 interestsArray.put(interestObj);
+                interestsArray.put(interestObj);
+                interestObj.put("interest_name",rs.getString("interest_name"));
             }
 
             response.getWriter().write(interestsArray.toString());

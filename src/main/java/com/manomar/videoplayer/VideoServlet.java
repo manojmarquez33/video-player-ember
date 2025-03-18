@@ -139,9 +139,9 @@
 
                     String username = jsonObject.optString("username", "mano").trim();
 
-
                     int mediaId = jsonObject.optInt("mediaId", -1);
                     int likeStatus = jsonObject.optInt("likeStatus", 0);
+                    boolean removeRecommendation = jsonObject.optBoolean("removeRecommendation", false);
 
                     if (username.isEmpty()) {
                         response.sendError(HttpServletResponse.SC_BAD_REQUEST, "User not found");
@@ -167,6 +167,8 @@
                         insertLikeStatus(userId, mediaId, likeStatus);
                     }
 
+                    handleUserInterests(userId, mediaId, likeStatus, removeRecommendation);
+
                     response.setStatus(HttpServletResponse.SC_OK);
                     response.getWriter().write("{\"message\": \"Like status updated successfully\"}");
 
@@ -181,6 +183,70 @@
         }
 
 
+        private void handleUserInterests(int userId, int mediaId, int likeStatus, boolean removeRecommendation) {
+
+            String fetchHashtag_SQL = "SELECT hashtags FROM media WHERE id = ?";
+            String fetchInterestId_SQL = "SELECT id FROM available_interests WHERE interest_name = ?";
+
+            String insertUserInterest_SQL = "INSERT INTO user_interests (user_id, interest_id) SELECT ?, ? WHERE NOT " +
+                    "EXISTS (SELECT 1 FROM user_interests WHERE user_id = ? AND interest_id = ?)";
+
+            String deleteUserInterest_SQL = "DELETE FROM user_interests WHERE user_id = ? AND interest_id = ?";
+            String deleteUserAllInterests_SQL = "DELETE FROM user_interests WHERE user_id = ?";
+
+            try (Connection conn = DatabaseConnect.getConnection();
+                 PreparedStatement fetchHashtagsStmt = conn.prepareStatement(fetchHashtag_SQL)) {
+                fetchHashtagsStmt.setInt(1, mediaId);
+                ResultSet rs = fetchHashtagsStmt.executeQuery();
+
+                if (rs.next()) {
+                    String hashtags = rs.getString("hashtags");
+
+                    if (hashtags != null && !hashtags.isEmpty()) {
+                        String[] hashtagArray = hashtags.split(",");
+
+                        for (String hashtag : hashtagArray) {
+                            hashtag = hashtag.trim().toLowerCase();
+                            try (PreparedStatement fetchInterestStmt = conn.prepareStatement(fetchInterestId_SQL)) {
+                                fetchInterestStmt.setString(1, hashtag);
+
+                                ResultSet interestRs = fetchInterestStmt.executeQuery();
+
+                                if (interestRs.next()) {
+                                    int interestId = interestRs.getInt("id");
+                                    if (likeStatus == 1) {
+                                        try (PreparedStatement insertStmt = conn.prepareStatement(insertUserInterest_SQL)) {
+                                            insertStmt.setInt(1, userId);
+                                            insertStmt.setInt(2, interestId);
+                                            insertStmt.setInt(3, userId);
+                                            insertStmt.setInt(4, interestId);
+                                            insertStmt.executeUpdate();
+                                        }
+                                    } else if (likeStatus == -1) {
+                                        if (removeRecommendation) {
+                                            try (PreparedStatement deleteStmt = conn.prepareStatement(deleteUserInterest_SQL)) {
+                                                deleteStmt.setInt(1, userId);
+                                                deleteStmt.setInt(2, interestId);
+                                                deleteStmt.executeUpdate();
+                                            }
+                                        } else {
+                                            try (PreparedStatement deleteAllStmt = conn.prepareStatement(deleteUserAllInterests_SQL)) {
+                                                deleteAllStmt.setInt(1, userId);
+                                                deleteAllStmt.executeUpdate();
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            } catch (SQLException | ClassNotFoundException e) {
+                e.printStackTrace();
+            }
+        }
+
+
         public JSONObject fetchRecommendedAndOtherVideos(int userId) throws SQLException, ClassNotFoundException {
             JSONObject response = new JSONObject();
 
@@ -191,6 +257,7 @@
             try {
                 String interestQuery = "SELECT i.interest_name FROM user_interests ui " +
                         "JOIN available_interests i ON ui.interest_id = i.id WHERE ui.user_id = ?";
+
                 PreparedStatement interestStmt = conn.prepareStatement(interestQuery);
                 interestStmt.setInt(1, userId);
                 ResultSet interestRs = interestStmt.executeQuery();
@@ -236,7 +303,7 @@
                     if (hashtags != null) {
                         String[] hashtagList = hashtags.toLowerCase().split(",");
                         for (String hashtag : hashtagList) {
-                            if (userInterests.contains(hashtag.trim())) {
+                                if (userInterests.contains(hashtag.trim())) {
                                 matchCount++;
                             }
                         }
@@ -327,7 +394,6 @@
             }
         }
 
-
         private void insertLikeStatus(int userId, int mediaId, int likeStatus) {
             String sql = "INSERT INTO likes (user_id, media_id, like_status) VALUES (?, ?, ?)";
             try (Connection conn = DatabaseConnect.getConnection();
@@ -356,7 +422,6 @@
             }
             return -1;
         }
-
 
         protected void doOptions(HttpServletRequest request, HttpServletResponse response) throws ServletException, IOException {
             enableCORS(response);
@@ -535,7 +600,7 @@
 
         private void streamVideo(HttpServletResponse response, String fileName) throws IOException {
             try {
-                fileName = java.net.URLDecoder.decode(fileName, "UTF-8"); // ✅ Proper decoding
+                fileName = java.net.URLDecoder.decode(fileName, "UTF-8");
             } catch (UnsupportedEncodingException e) {
                 System.err.println("Error decoding filename: " + e.getMessage());
             }
