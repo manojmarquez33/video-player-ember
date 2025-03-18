@@ -2,14 +2,11 @@ package com.manomar.videoplayer;
 
 import jakarta.servlet.ServletException;
 import jakarta.servlet.annotation.WebServlet;
-import jakarta.servlet.http.HttpServlet;
-import jakarta.servlet.http.HttpServletRequest;
-import jakarta.servlet.http.HttpServletResponse;
-import jakarta.servlet.http.HttpSession;
+import jakarta.servlet.http.*;
 import org.json.JSONObject;
 import java.io.IOException;
 
-import static com.manomar.videoplayer.SignUpServlet.enableCORS;
+import static com.manomar.videoplayer.LoginServlet.enableCORS;
 
 @WebServlet("/logout")
 public class LogoutServlet extends HttpServlet {
@@ -23,13 +20,24 @@ public class LogoutServlet extends HttpServlet {
 
         if (session != null) {
             session.invalidate();
-            jsonResponse.put("success", true);
-            jsonResponse.put("message", "Logout successful.");
-        } else {
-            jsonResponse.put("success", false);
-            jsonResponse.put("message", "No active session found.");
         }
 
+        clearCookie(response, "username");
+        clearCookie(response, "sessionId");
+        clearCookie(response, "JSESSIONID");
+
+        jsonResponse.put("success", true);
+        jsonResponse.put("message", "Logout successful. Cookies removed.");
+
         response.getWriter().write(jsonResponse.toString());
+    }
+
+    private void clearCookie(HttpServletResponse response, String cookieName) {
+        Cookie cookie = new Cookie(cookieName, "");
+        cookie.setPath("/");
+        cookie.setHttpOnly(false);
+        cookie.setSecure(false);
+        cookie.setMaxAge(0);
+        response.addCookie(cookie);
     }
 }

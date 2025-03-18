@@ -1,4 +1,4 @@
-//package com.manomar.videoplayer.;
+package com.manomar.videoplayer;//package com.manomar.videoplayer.;
 
 //@Component
 //public class ServerPortCustomizer implements WebServerFactoryCustomizer<ConfigurableServletWebServerFactory> {

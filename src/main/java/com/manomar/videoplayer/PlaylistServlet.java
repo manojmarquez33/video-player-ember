@@ -1,9 +1,6 @@
 package com.manomar.videoplayer;
 
-import jakarta.servlet.ServletException;
-import jakarta.servlet.annotation.WebServlet;
 import jakarta.servlet.http.HttpServlet;
-import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -32,15 +29,14 @@ public class PlaylistServlet extends HttpServlet {
                 playlistObject.put("fileName", fileName);
                 playlistObject.put("fileExtension", "txt");
 
-                // ✅ Convert MB to KB correctly
                 double sizeInKB = rs.getDouble("size") * 1024;
                 playlistObject.put("size", String.format("%.2f KB", sizeInKB));
 
-                // ✅ Handle timestamp properly
+
                 Timestamp timestamp = rs.getTimestamp("last_modified");
                 long lastModified = (timestamp != null) ? timestamp.getTime() : System.currentTimeMillis();
 
-                // ✅ Calculate days ago (ensure at least 1 day)
+
                 long daysAgo = (currentTime - lastModified) / (1000L * 60 * 60 * 24);
                 playlistObject.put("daysAgo", Math.max(daysAgo, 1) + " day" + (daysAgo > 1 ? "s" : "") + " ago");
 
@@ -66,7 +62,7 @@ public class PlaylistServlet extends HttpServlet {
             ResultSet rs = stmt.executeQuery();
 
             if (rs.next()) {
-                playlistId = rs.getInt("id"); // ✅ Get the playlist ID
+                playlistId = rs.getInt("id");
             }
         } catch (SQLException | ClassNotFoundException e) {
             e.printStackTrace();
@@ -114,7 +110,7 @@ public class PlaylistServlet extends HttpServlet {
             response.setContentType("application/json");
             response.setCharacterEncoding("UTF-8");
 
-            responseJson.put("playlist_id", playlistId); // ✅ Include playlist ID
+            responseJson.put("playlist_id", playlistId);
             responseJson.put("videos", videoArray);
 
             response.getWriter().write(responseJson.toString());
@@ -130,6 +126,7 @@ public class PlaylistServlet extends HttpServlet {
         long lastModified = playlistFile.lastModified();
 
         int playlistId = getOrCreatePlaylist(playlistName, fileSizeKB, lastModified);
+        System.out.println("Playlist ID for " + playlistName + ": " + playlistId);
 
         if (playlistId == -1) {
             System.err.println("Unable to process playlist: " + playlistName);
@@ -141,11 +138,13 @@ public class PlaylistServlet extends HttpServlet {
             while ((videoName = reader.readLine()) != null) {
                 videoName = videoName.trim();
                 int videoId = getVideoIdByName(videoName);
+                System.out.println("Checking video: " + videoName + " -> Video ID: " + videoId);
 
                 if (videoId != -1) {
                     addVideoToPlaylist(playlistId, videoId);
+                    System.out.println(" Added to playlist: " + videoName);
                 } else {
-                    System.err.println("Not found in DB: " + videoName);
+                    System.err.println("Video not found in DB: " + videoName);
                 }
             }
         } catch (IOException e) {
@@ -196,14 +195,19 @@ public class PlaylistServlet extends HttpServlet {
     }
 
     private static int getVideoIdByName(String fileName) {
-        String sql = "SELECT id FROM media WHERE file_name = ?";
+        String sql = "SELECT id FROM media WHERE LOWER(file_name) = LOWER(?)";
 
         try (Connection conn = DatabaseConnect.getConnection();
              PreparedStatement stmt = conn.prepareStatement(sql)) {
             stmt.setString(1, fileName);
+            System.out.println("Searching for video in DB: " + fileName);
             ResultSet rs = stmt.executeQuery();
             if (rs.next()) {
-                return rs.getInt("id");
+                int videoId = rs.getInt("id");
+                System.out.println("Found video: " + fileName + " -> ID: " + videoId);
+                return videoId;
+            } else {
+                System.err.println("Video not found in media table: " + fileName);
             }
         } catch (SQLException | ClassNotFoundException e) {
             e.printStackTrace();
@@ -212,9 +216,7 @@ public class PlaylistServlet extends HttpServlet {
     }
 
     private static void addVideoToPlaylist(int playlistId, int videoId) {
-
         String checkSQL = "SELECT 1 FROM playlist_videos WHERE playlist_id = ? AND video_id = ? LIMIT 1";
-
         String insertSQL = "INSERT INTO playlist_videos (playlist_id, video_id) VALUES (?, ?)";
 
         try (Connection conn = DatabaseConnect.getConnection();
@@ -223,16 +225,21 @@ public class PlaylistServlet extends HttpServlet {
 
             checkStmt.setInt(1, playlistId);
             checkStmt.setInt(2, videoId);
-
             ResultSet rs = checkStmt.executeQuery();
 
             if (rs.next()) {
+                System.out.println("Video already exists in playlist: Video ID = " + videoId);
                 return;
             }
 
             insertStmt.setInt(1, playlistId);
             insertStmt.setInt(2, videoId);
-            insertStmt.executeUpdate();
+            int rowsAffected = insertStmt.executeUpdate();
+            if (rowsAffected > 0) {
+                System.out.println("Successfully inserted Video ID " + videoId + " into Playlist ID " + playlistId);
+            } else {
+                System.err.println("Failed to insert Video ID " + videoId + " into Playlist ID " + playlistId);
+            }
 
         } catch (SQLException | ClassNotFoundException e) {
             e.printStackTrace();

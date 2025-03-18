@@ -5,16 +5,16 @@ import jakarta.servlet.annotation.WebServlet;
 import jakarta.servlet.http.HttpServlet;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.BufferedReader;
 import java.io.IOException;
-import java.sql.Connection;
-import java.sql.PreparedStatement;
-import java.sql.SQLException;
+import java.sql.*;
 
 @WebServlet("/signup")
 public class SignUpServlet extends HttpServlet {
+
     @Override
     protected void doOptions(HttpServletRequest request, HttpServletResponse response) throws ServletException, IOException {
         enableCORS(response);
@@ -26,7 +26,6 @@ public class SignUpServlet extends HttpServlet {
         enableCORS(response);
         response.setContentType("application/json");
         response.setCharacterEncoding("UTF-8");
-
 
         StringBuilder jsonData = new StringBuilder();
         String line;
@@ -40,39 +39,55 @@ public class SignUpServlet extends HttpServlet {
         String username = jsonObject.getString("username");
         String email = jsonObject.getString("email");
         String password = jsonObject.getString("password");
+        JSONArray interestIds = jsonObject.getJSONArray("interestIds");
 
         try (Connection conn = DatabaseConnect.getConnection()) {
-            String sql = "INSERT INTO users (username, email, password) VALUES (?, ?, ?)";
-            try (PreparedStatement stmt = conn.prepareStatement(sql)) {
+            conn.setAutoCommit(false);
+
+            String userSql = "INSERT INTO users (username, email, password) VALUES (?, ?, ?)";
+            try (PreparedStatement stmt = conn.prepareStatement(userSql, Statement.RETURN_GENERATED_KEYS)) {
                 stmt.setString(1, username);
                 stmt.setString(2, email);
-                stmt.setString(3, password); // Consider hashing the password
+                stmt.setString(3, password);
+                stmt.executeUpdate();
 
-                int rowsInserted = stmt.executeUpdate();
+                ResultSet rs = stmt.getGeneratedKeys();
+                if (rs.next()) {
+                    int userId = rs.getInt(1);
 
-                JSONObject jsonResponse = new JSONObject();
-                if (rowsInserted > 0) {
-                    jsonResponse.put("message", "User registered successfully.");
-                    response.setStatus(HttpServletResponse.SC_CREATED);
-                } else {
-                    jsonResponse.put("message", "Registration failed.");
-                    response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
+                    String interestSql = "INSERT INTO user_interests (user_id, interest_id) VALUES (?, ?)";
+                    try (PreparedStatement interestStmt = conn.prepareStatement(interestSql)) {
+                        for (int i = 0; i < interestIds.length(); i++) {
+                            interestStmt.setInt(1, userId);
+                            interestStmt.setInt(2, interestIds.getInt(i));
+                            interestStmt.addBatch();
+                        }
+                        interestStmt.executeBatch();
+                    }
                 }
-                response.getWriter().write(jsonResponse.toString());
             }
+
+            conn.commit();
+            response.setStatus(HttpServletResponse.SC_CREATED);
+            response.getWriter().write("{\"message\":\"User registered successfully.\"}");
+
         } catch (SQLException | ClassNotFoundException e) {
             e.printStackTrace();
-            JSONObject errorResponse = new JSONObject();
-            errorResponse.put("error", "Error: " + e.getMessage());
             response.setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
-            response.getWriter().write(errorResponse.toString());
+            response.getWriter().write("{\"error\":\"Error: " + e.getMessage() + "\"}");
         }
+    }
+
+    @Override
+    protected void doGet(HttpServletRequest request, HttpServletResponse response) throws ServletException, IOException {
+        enableCORS(response);
+        response.sendError(HttpServletResponse.SC_METHOD_NOT_ALLOWED, "GET method is not supported for /signup");
     }
 
     public static void enableCORS(HttpServletResponse response) {
         response.setHeader("Access-Control-Allow-Origin", "http://localhost:4200");
         response.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-        response.setHeader("Access-Control-Allow-Headers", "Content-Type");
+        response.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
         response.setHeader("Access-Control-Allow-Credentials", "true");
     }
 }

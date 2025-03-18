@@ -1,4 +1,4 @@
-//package com.manomar.videoplayer;
+package com.manomar.videoplayer;//package com.manomar.videoplayer;
 //
 //import java.io.*;
 //import java.util.concurrent.TimeUnit;

@@ -9,8 +9,12 @@ import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
-import java.io.*;
-import java.sql.*;
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
 
 @WebServlet("/CommentServlet")
 public class CommentServlet extends HttpServlet {
@@ -33,6 +37,7 @@ public class CommentServlet extends HttpServlet {
             int mediaId = jsonRequest.getInt("mediaId");
             String username = jsonRequest.getString("username");
             String commentText = jsonRequest.getString("comment");
+            String videoTime  = jsonRequest.getString("videoTime");
 
             int userId = -1;
             String userQuery = "SELECT id FROM users WHERE username = ?";
@@ -50,12 +55,13 @@ public class CommentServlet extends HttpServlet {
                 throw new RuntimeException(e);
             }
 
-            String sql = "INSERT INTO comments (media_id, user_id, comment_text) VALUES (?, ?, ?)";
+            String sql = "INSERT INTO comments (media_id, user_id, comment_text,video_time) VALUES (?, ?, ?,?)";
             try (Connection conn = DatabaseConnect.getConnection();
                  PreparedStatement stmt = conn.prepareStatement(sql)) {
                 stmt.setInt(1, mediaId);
                 stmt.setInt(2, userId);
                 stmt.setString(3, commentText);
+                stmt.setString(4, videoTime);
                 stmt.executeUpdate();
             } catch (ClassNotFoundException e) {
                 throw new RuntimeException(e);
@@ -84,7 +90,7 @@ public class CommentServlet extends HttpServlet {
 
         JSONArray commentArray = new JSONArray();
 
-        String sql = "SELECT c.id, c.comment_text, c.created_at, c.user_id, u.username " +
+        String sql = "SELECT c.id, c.comment_text, c.created_at,c.video_time,c.user_id, u.username " +
                 "FROM comments c " +
                 "JOIN users u ON c.user_id = u.id " +
                 "WHERE c.media_id = ? "+
@@ -103,6 +109,7 @@ public class CommentServlet extends HttpServlet {
                 commentObj.put("username", rs.getString("username"));
                 commentObj.put("comment_text", rs.getString("comment_text"));
                 commentObj.put("created_at", rs.getTimestamp("created_at").toInstant().toString());
+                commentObj.put("video_time", rs.getString("video_time"));
 
 
                 commentArray.put(commentObj);

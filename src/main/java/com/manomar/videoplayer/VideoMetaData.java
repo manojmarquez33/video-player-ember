@@ -1,13 +1,12 @@
         package com.manomar.videoplayer;
-        
-        import com.manomar.videoplayer.DatabaseConnect;
+
         import org.json.JSONArray;
         import org.json.JSONObject;
-        import java.io.File;
+
+        import java.io.UnsupportedEncodingException;
         import java.net.URLEncoder;
         import java.sql.*;
-        import java.io.UnsupportedEncodingException;
-        
+
         import static com.manomar.videoplayer.PlaylistServlet.convertToTimestamp;
         
         
