@@ -103,40 +103,65 @@
             }
 
             public static void insertVideoMetadata(int userId, String fileName, double size, long lastModified, boolean subtitleAvailable, String hashtags) {
-                String sql = "INSERT INTO media (user_id, file_name, size, last_modified, hashtags) " +
-                        "VALUES (?, ?, ?, ?, ?) " +
-                        "ON DUPLICATE KEY UPDATE size = VALUES(size), last_modified = VALUES(last_modified), hashtags = VALUES(hashtags)";
+                String insertMediaSQL = "INSERT INTO media (user_id, file_name, size, last_modified) " +
+                        "VALUES (?, ?, ?, ?) " +
+                        "ON DUPLICATE KEY UPDATE size = VALUES(size), last_modified = VALUES(last_modified)";
 
-                String sql1 = "INSERT INTO videos (media_id, subtitle_available) " +
+                String insertHashtagSQL = "INSERT INTO hashtags (hashtag) VALUES (?) ON DUPLICATE KEY UPDATE id = LAST_INSERT_ID(id)";
+
+                String insertMediaHashtagSQL = "INSERT INTO media_hashtags (media_id, hashtag_id) VALUES (?, ?) " +
+                        "ON DUPLICATE KEY UPDATE media_id = VALUES(media_id), hashtag_id = VALUES(hashtag_id)";
+
+                String insertVideoSQL = "INSERT INTO videos (media_id, subtitle_available) " +
                         "VALUES ((SELECT id FROM media WHERE file_name = ?), ?) " +
                         "ON DUPLICATE KEY UPDATE subtitle_available = VALUES(subtitle_available)";
 
                 try (Connection conn = DatabaseConnect.getConnection();
-                     PreparedStatement stmt = conn.prepareStatement(sql);
-                     PreparedStatement stmt1 = conn.prepareStatement(sql1)) {
+                     PreparedStatement mediaStmt = conn.prepareStatement(insertMediaSQL, Statement.RETURN_GENERATED_KEYS);
+                     PreparedStatement hashtagStmt = conn.prepareStatement(insertHashtagSQL, Statement.RETURN_GENERATED_KEYS);
+                     PreparedStatement mediaHashtagStmt = conn.prepareStatement(insertMediaHashtagSQL);
+                     PreparedStatement videoStmt = conn.prepareStatement(insertVideoSQL)) {
 
-                    stmt.setInt(1, userId);
-                    stmt.setString(2, fileName);
-                    stmt.setDouble(3, size);
-                    stmt.setTimestamp(4, convertToTimestamp(lastModified));
-                    stmt.setString(5, hashtags);
+                    mediaStmt.setInt(1, userId);
+                    mediaStmt.setString(2, fileName);
+                    mediaStmt.setDouble(3, size);
+                    mediaStmt.setTimestamp(4, convertToTimestamp(lastModified));
+                    mediaStmt.executeUpdate();
 
-                    int rowsAffected = stmt.executeUpdate();
-                    if (rowsAffected > 0) {
-                        System.out.println("Successfully inserted/updated video in DB: " + fileName);
-                    } else {
-                        System.err.println("No rows inserted for: " + fileName);
+                    int mediaId = -1;
+                    try (ResultSet rs = mediaStmt.getGeneratedKeys()) {
+                        if (rs.next()) {
+                            mediaId = rs.getInt(1);
+                        }
                     }
 
-                    stmt1.setString(1, fileName);
-                    stmt1.setBoolean(2, subtitleAvailable);
+                    if (hashtags != null && !hashtags.isEmpty() && mediaId > 0) {
+                        String[] hashtagArray = hashtags.split(",");
 
-                    int subtitleRows = stmt1.executeUpdate();
-                    if (subtitleRows > 0) {
-                        System.out.println("Subtitle information updated for: " + fileName);
-                    } else {
-                        System.err.println("No subtitle update for: " + fileName);
+                        for (String hashtag : hashtagArray) {
+                            hashtag = hashtag.trim();
+                            if (!hashtag.isEmpty()) {
+                                hashtagStmt.setString(1, hashtag);
+                                hashtagStmt.executeUpdate();
+
+                                int hashtagId = -1;
+                                try (ResultSet rs = hashtagStmt.getGeneratedKeys()) {
+                                    if (rs.next()) {
+                                        hashtagId = rs.getInt(1);
+                                    }
+                                }
+
+                                if (hashtagId > 0) {
+                                    mediaHashtagStmt.setInt(1, mediaId);
+                                    mediaHashtagStmt.setInt(2, hashtagId);
+                                    mediaHashtagStmt.executeUpdate();
+                                }
+                            }
+                        }
                     }
+                    videoStmt.setString(1, fileName);
+                    videoStmt.setBoolean(2, subtitleAvailable);
+                    videoStmt.executeUpdate();
 
                 } catch (SQLException | ClassNotFoundException e) {
                     e.printStackTrace();

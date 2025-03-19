@@ -255,15 +255,17 @@
 
         public JSONObject fetchRecommendedAndOtherVideos(int userId) throws SQLException, ClassNotFoundException {
             JSONObject response = new JSONObject();
-
             JSONArray recommendedVideos = new JSONArray();
             JSONArray otherVideos = new JSONArray();
 
             Connection conn = DatabaseConnect.getConnection();
             try {
-                String interestQuery = "SELECT i.interest_name FROM user_interests ui " +
-                        "JOIN available_interests i ON ui.interest_id = i.id WHERE ui.user_id = ?";
-
+                // Fetch user interests
+                String interestQuery = """
+            SELECT i.interest_name FROM user_interests ui 
+            JOIN available_interests i ON ui.interest_id = i.id 
+            WHERE ui.user_id = ?
+        """;
                 PreparedStatement interestStmt = conn.prepareStatement(interestQuery);
                 interestStmt.setInt(1, userId);
                 ResultSet interestRs = interestStmt.executeQuery();
@@ -277,8 +279,17 @@
                     interestArray.put(interest);
                 }
                 response.put("userInterests", interestArray);
+                interestStmt.close();
 
-                String videoQuery = "SELECT id, file_name, size, last_modified, hashtags FROM media";
+                // Fetch videos with associated hashtags
+                String videoQuery = """
+            SELECT m.id, m.file_name, m.size, m.last_modified, 
+                   GROUP_CONCAT(h.hashtag ORDER BY h.hashtag SEPARATOR ', ') AS hashtags 
+            FROM media m
+            LEFT JOIN media_hashtags mh ON m.id = mh.media_id
+            LEFT JOIN hashtags h ON mh.hashtag_id = h.id
+            GROUP BY m.id
+        """;
                 PreparedStatement videoStmt = conn.prepareStatement(videoQuery);
                 ResultSet videoRs = videoStmt.executeQuery();
 
@@ -288,7 +299,7 @@
                     JSONObject video = new JSONObject();
                     int videoId = videoRs.getInt("id");
                     String fileName = videoRs.getString("file_name");
-                    String hashtags = videoRs.getString("hashtags");
+                    String hashtags = videoRs.getString("hashtags"); // Normalized hashtags
 
                     video.put("id", videoId);
                     video.put("fileName", fileName);
@@ -305,11 +316,11 @@
                         video.put("url", AppConfig.VIDEO_API + fileName);
                     }
 
+                    // Count matching interests with hashtags
                     int matchCount = 0;
                     if (hashtags != null) {
-                        String[] hashtagList = hashtags.toLowerCase().split(",");
-                        for (String hashtag : hashtagList) {
-                                if (userInterests.contains(hashtag.trim())) {
+                        for (String hashtag : hashtags.toLowerCase().split(",\\s*")) {
+                            if (userInterests.contains(hashtag.trim())) {
                                 matchCount++;
                             }
                         }
@@ -321,11 +332,9 @@
                         otherVideos.put(video);
                     }
                 }
+                videoStmt.close();
 
-//                recommendedVideoMap.entrySet().stream()
-//                        .sorted((a, b) -> Integer.compare(b.getValue(), a.getValue()))
-//                        .forEach(entry -> recommendedVideos.put(entry.getKey()));
-
+                // Sort recommended videos by match count & last modified date
                 recommendedVideoMap.entrySet().stream()
                         .sorted((a, b) -> {
                             int matchCompare = Integer.compare(b.getValue(), a.getValue());
@@ -337,7 +346,6 @@
                             return matchCompare;
                         })
                         .forEach(entry -> recommendedVideos.put(entry.getKey()));
-
 
                 response.put("recommendedVideos", recommendedVideos);
                 response.put("otherVideos", otherVideos);
