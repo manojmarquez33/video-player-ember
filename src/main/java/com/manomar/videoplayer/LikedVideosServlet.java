@@ -7,6 +7,8 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.IOException;
+import java.io.UnsupportedEncodingException;
+import java.net.URLEncoder;
 import java.sql.*;
 
 @WebServlet("/liked-videos")
@@ -172,6 +174,7 @@ public class LikedVideosServlet extends HttpServlet {
                 while (rs.next()) {
                     JSONObject video = new JSONObject();
                     video.put("media_id", rs.getInt("media_id"));
+                    video.put("url", AppConfig.VIDEO_API + URLEncoder.encode(rs.getString("file_name"), "UTF-8"));
                     video.put("name", rs.getString("file_name"));
                     video.put("like_status", rs.getInt("like_status"));
 
@@ -181,6 +184,8 @@ public class LikedVideosServlet extends HttpServlet {
                         dislikedVideos.put(video);
                     }
                 }
+            } catch (UnsupportedEncodingException e) {
+                throw new RuntimeException(e);
             }
         }
 

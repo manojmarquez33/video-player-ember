@@ -102,32 +102,28 @@
                 return exists;
             }
 
-            public static void insertVideoMetadata(String fileName, double size, long lastModified, boolean subtitleAvailable) {
-
-                String sql = "INSERT INTO media (file_name, size, last_modified) " +
-                        "VALUES (?, ?, ?) " +
-                        "ON DUPLICATE KEY UPDATE size = VALUES(size), last_modified = VALUES(last_modified)";
+            public static void insertVideoMetadata(int userId, String fileName, double size, long lastModified, boolean subtitleAvailable, String hashtags) {
+                String sql = "INSERT INTO media (user_id, file_name, size, last_modified, hashtags) " +
+                        "VALUES (?, ?, ?, ?, ?) " +
+                        "ON DUPLICATE KEY UPDATE size = VALUES(size), last_modified = VALUES(last_modified), hashtags = VALUES(hashtags)";
 
                 String sql1 = "INSERT INTO videos (media_id, subtitle_available) " +
                         "VALUES ((SELECT id FROM media WHERE file_name = ?), ?) " +
                         "ON DUPLICATE KEY UPDATE subtitle_available = VALUES(subtitle_available)";
 
-                String sql2 = "INSERT INTO likes (user_id, media_id, like_status) VALUES (?, ?, ?) " +
-                        "ON DUPLICATE KEY UPDATE like_status = VALUES(like_status)";
-
                 try (Connection conn = DatabaseConnect.getConnection();
                      PreparedStatement stmt = conn.prepareStatement(sql);
-                     PreparedStatement stmt2 = conn.prepareStatement(sql2);
                      PreparedStatement stmt1 = conn.prepareStatement(sql1)) {
 
-
-                    stmt.setString(1, fileName);
-                    stmt.setDouble(2, size);
-                    stmt.setTimestamp(3, convertToTimestamp(lastModified));
+                    stmt.setInt(1, userId);
+                    stmt.setString(2, fileName);
+                    stmt.setDouble(3, size);
+                    stmt.setTimestamp(4, convertToTimestamp(lastModified));
+                    stmt.setString(5, hashtags);
 
                     int rowsAffected = stmt.executeUpdate();
                     if (rowsAffected > 0) {
-                        System.out.println(" Successfully inserted/updated video in DB: " + fileName);
+                        System.out.println("Successfully inserted/updated video in DB: " + fileName);
                     } else {
                         System.err.println("No rows inserted for: " + fileName);
                     }
@@ -140,16 +136,6 @@
                         System.out.println("Subtitle information updated for: " + fileName);
                     } else {
                         System.err.println("No subtitle update for: " + fileName);
-                    }
-
-                    stmt2.setString(1, fileName);
-                    stmt2.setBoolean(2, subtitleAvailable);
-
-                    int likeRows = stmt1.executeUpdate();
-                    if (likeRows > 0) {
-                        System.out.println("like status updated for: " + fileName);
-                    } else {
-                        System.err.println("No like status update for: " + fileName);
                     }
 
                 } catch (SQLException | ClassNotFoundException e) {

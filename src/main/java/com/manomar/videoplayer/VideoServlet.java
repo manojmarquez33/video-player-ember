@@ -1,6 +1,7 @@
     package com.manomar.videoplayer;
 
     import jakarta.servlet.ServletException;
+    import jakarta.servlet.annotation.MultipartConfig;
     import jakarta.servlet.annotation.WebServlet;
     import jakarta.servlet.http.HttpServlet;
     import jakarta.servlet.http.HttpServletRequest;
@@ -16,19 +17,24 @@
     import java.util.*;
 
     import static com.manomar.videoplayer.PlaylistServlet.returnPlaylistVideos;
+    import static com.manomar.videoplayer.VideoUploadServlet.getUsernameFromCookies;
     import static java.lang.System.out;
 
 
     @WebServlet("/VideoServlet")
+    @MultipartConfig(fileSizeThreshold = 1024 * 1024 * 10,
+            maxFileSize = 1024 * 1024 * 500,
+            maxRequestSize = 1024 * 1024 * 600)
+
     public class VideoServlet extends HttpServlet {
 
         private static final long serialVersionUID = 1L;
 
-        @Override
-        public void init() throws ServletException {
-            checkFile();
-            System.out.println("check file 1");
-        }
+//        @Override
+//        public void init() throws ServletException {
+//            checkFile();
+//            System.out.println("check file 1");
+//        }
 
         protected void doGet(HttpServletRequest request, HttpServletResponse response) throws ServletException, IOException {
             enableCORS(response);
@@ -316,9 +322,22 @@
                     }
                 }
 
+//                recommendedVideoMap.entrySet().stream()
+//                        .sorted((a, b) -> Integer.compare(b.getValue(), a.getValue()))
+//                        .forEach(entry -> recommendedVideos.put(entry.getKey()));
+
                 recommendedVideoMap.entrySet().stream()
-                        .sorted((a, b) -> Integer.compare(b.getValue(), a.getValue()))
+                        .sorted((a, b) -> {
+                            int matchCompare = Integer.compare(b.getValue(), a.getValue());
+                            if (matchCompare == 0) {
+                                Timestamp lastModifiedA = (Timestamp) a.getKey().get("lastModified");
+                                Timestamp lastModifiedB = (Timestamp) b.getKey().get("lastModified");
+                                return lastModifiedB.compareTo(lastModifiedA);
+                            }
+                            return matchCompare;
+                        })
                         .forEach(entry -> recommendedVideos.put(entry.getKey()));
+
 
                 response.put("recommendedVideos", recommendedVideos);
                 response.put("otherVideos", otherVideos);
@@ -428,33 +447,51 @@
             response.setStatus(HttpServletResponse.SC_OK);
         }
 
-        private void checkFile() {
+//        private void checkFile() {
+//            File directory = new File(AppConfig.VIDEO_DIRECTORY);
+//
+//            if (!directory.exists() || !directory.isDirectory()) {
+//                System.err.println("Error: Video directory not found: " + AppConfig.VIDEO_DIRECTORY);
+//                return;
+//            }
+//
+//            File[] files = directory.listFiles();
+//            if (files == null) {
+//                System.err.println("Error: Unable to list files in directory.");
+//                return;
+//            }
+//
+//            System.out.println("Checking files in directory...");
+//
+//            for (File file : files) {
+//                String fileName = file.getName();
+//
+//                if (fileName.toLowerCase().endsWith(".mp4")) {
+//                    double videoSize = file.length() / (1024.0 * 1024.0); // Convert bytes to MB
+//                    long lastModified = file.lastModified();
+//
+//
+//                    File subtitleFile = new File(AppConfig.VIDEO_DIRECTORY, fileName.replace(".mp4", ".vtt"));
+//                    boolean subtitleAvailable = subtitleFile.exists();
+//
+//
+//                    if (!VideoMetaData.isVideoInDatabase(fileName)) {
+//                        System.out.println("Inserting new video: " + fileName);
+//
+//                        int defaultUserId = getUsernameFromCookies(request);
+//                        String defaultHashtags = "#default";
+//
+//                        VideoMetaData.insertVideoMetadata(defaultUserId, fileName, videoSize, lastModified, subtitleAvailable, defaultHashtags);
+//                    } else {
+//                        System.out.println("Skipping duplicate video: " + fileName);
+//                    }
+//                } else if (fileName.toLowerCase().endsWith(".txt")) {
+//
+//                    PlaylistServlet.processPlaylistFile(file);
+//                }
+//            }
+//        }
 
-            File directory = new File(AppConfig.VIDEO_DIRECTORY);
-            File[] files = directory.listFiles();
-            System.out.println("check file 2");
-            if (files != null) {
-                for (File file : files) {
-                    String fileName = file.getName();
-
-                    if (fileName.endsWith(".mp4")) {
-                        double videoSize = file.length() / (1024.0 * 1024.0);
-                        long lastModified = file.lastModified();
-
-                        if (!VideoMetaData.isVideoInDatabase(fileName)) {
-                            boolean subtitleAvailable = new File(AppConfig.VIDEO_DIRECTORY + fileName.replace(".mp4", ".vtt")).exists();
-                            out.println("Insert new video: " + fileName);
-                            VideoMetaData.insertVideoMetadata(fileName, videoSize, lastModified, subtitleAvailable);
-                        } else {
-                            out.println("skipiing duplicate video: " + fileName);
-                        }
-                    } else if (fileName.endsWith(".txt")) {
-                        //System.out.println("file found: " + fileName);
-                        PlaylistServlet.processPlaylistFile(file);
-                    }
-                }
-            }
-        }
 
         private void searchVideos(HttpServletResponse response, String searchQuery) throws IOException {
             JSONArray resultArray = new JSONArray();

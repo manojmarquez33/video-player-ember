@@ -80,7 +80,7 @@ public class UpdateInterestServlet extends HttpServlet {
     }
 
     private void updateUserInterests(Connection conn, int userId, JSONArray interestsArray) throws SQLException {
-        // Clear old interests
+
         String deleteQuery = "DELETE FROM user_interests WHERE user_id = ?";
         try (PreparedStatement deleteStmt = conn.prepareStatement(deleteQuery)) {
             deleteStmt.setInt(1, userId);

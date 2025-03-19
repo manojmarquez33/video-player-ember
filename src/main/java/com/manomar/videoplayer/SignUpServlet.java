@@ -37,6 +37,7 @@ public class SignUpServlet extends HttpServlet {
 
         JSONObject jsonObject = new JSONObject(jsonData.toString());
         String username = jsonObject.getString("username");
+        String fullname = jsonObject.getString("fullname");
         String email = jsonObject.getString("email");
         String password = jsonObject.getString("password");
         JSONArray interestIds = jsonObject.getJSONArray("interestIds");
@@ -44,11 +45,12 @@ public class SignUpServlet extends HttpServlet {
         try (Connection conn = DatabaseConnect.getConnection()) {
             conn.setAutoCommit(false);
 
-            String userSql = "INSERT INTO users (username, email, password) VALUES (?, ?, ?)";
+            String userSql = "INSERT INTO users (fullname,username, email, password) VALUES (?, ?, ?,?)";
             try (PreparedStatement stmt = conn.prepareStatement(userSql, Statement.RETURN_GENERATED_KEYS)) {
-                stmt.setString(1, username);
-                stmt.setString(2, email);
-                stmt.setString(3, password);
+                stmt.setString(1, fullname);
+                stmt.setString(2, username);
+                stmt.setString(3, email);
+                stmt.setString(4, password);
                 stmt.executeUpdate();
 
                 ResultSet rs = stmt.getGeneratedKeys();
