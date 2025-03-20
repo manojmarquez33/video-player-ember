@@ -58,7 +58,11 @@ public class VideoUploadServlet extends HttpServlet {
             }
             boolean subtitleAvailable = new File(AppConfig.VIDEO_DIRECTORY + fileName.replace(".mp4", ".vtt")).exists();
 
-            VideoMetaData.insertVideoMetadata(userId, fileName, fileSize, lastModified, subtitleAvailable,hashtags);
+            if (fileName.toLowerCase().endsWith(".mp4")) {
+                VideoMetaData.insertVideoMetadata(userId, fileName, fileSize, lastModified, subtitleAvailable, hashtags);
+            }  else if (fileName.toLowerCase().endsWith(".txt")) {
+                PlaylistServlet.processPlaylistFile(userId,saveFile,hashtags);
+            }
 
             JSONObject jsonResponse = new JSONObject();
             jsonResponse.put("message", "Video uploaded successfully.");

@@ -120,16 +120,28 @@ public class PlaylistServlet extends HttpServlet {
         }
     }
 
-    public static void processPlaylistFile(File playlistFile) {
+    public static void processPlaylistFile(int userId, File playlistFile, String hashtags) {
+        System.out.println("Processing file: " + playlistFile.getAbsolutePath());
+        if (!playlistFile.exists()) {
+            System.err.println("Playlist file not found: " + playlistFile.getAbsolutePath());
+            return;
+        }
+        if (!playlistFile.canRead()) {
+            System.err.println("Cannot read playlist file: " + playlistFile.getAbsolutePath());
+            return;
+        }
+
         String playlistName = playlistFile.getName().trim().toLowerCase();
-        double fileSizeKB = (playlistFile.length() / 1024.0);
+        System.out.println("Processing Playlist: " + playlistName);
+
+        double fileSizeKB = playlistFile.length() / 1024.0;
         long lastModified = playlistFile.lastModified();
 
-        int playlistId = getOrCreatePlaylist(playlistName, fileSizeKB, lastModified);
+        int playlistId = getOrCreatePlaylist(userId, playlistName, fileSizeKB, lastModified, hashtags);
         System.out.println("Playlist ID for " + playlistName + ": " + playlistId);
 
         if (playlistId == -1) {
-            System.err.println("Unable to process playlist: " + playlistName);
+            System.err.println("Unable to create or find playlist: " + playlistName);
             return;
         }
 
@@ -137,12 +149,12 @@ public class PlaylistServlet extends HttpServlet {
             String videoName;
             while ((videoName = reader.readLine()) != null) {
                 videoName = videoName.trim();
-                int videoId = getVideoIdByName(videoName);
-                System.out.println("Checking video: " + videoName + " -> Video ID: " + videoId);
+                System.out.println("     Checking video: " + videoName);
 
+                int videoId = getVideoIdByName(videoName);
                 if (videoId != -1) {
                     addVideoToPlaylist(playlistId, videoId);
-                    System.out.println(" Added to playlist: " + videoName);
+                    System.out.println("Added to playlist: " + videoName);
                 } else {
                     System.err.println("Video not found in DB: " + videoName);
                 }
@@ -152,12 +164,9 @@ public class PlaylistServlet extends HttpServlet {
         }
     }
 
-    private static int getOrCreatePlaylist(String playlistName, double size, long lastModified) {
-
+    private static int getOrCreatePlaylist(int userId, String playlistName, double size, long lastModified, String hashtags) {
         String selectSQL = "SELECT id FROM media WHERE LOWER(file_name) = ?";
-
-        String insertSQL = "INSERT INTO media (file_name, size, last_modified) VALUES (?, ?, ?)";
-
+        String insertSQL = "INSERT INTO media (user_id, file_name, size, last_modified) VALUES (?, ?, ?, ?)";
         String updateSQL = "UPDATE media SET size = ?, last_modified = ? WHERE id = ?";
 
         try (Connection conn = DatabaseConnect.getConnection();
@@ -168,30 +177,78 @@ public class PlaylistServlet extends HttpServlet {
             selectStmt.setString(1, playlistName);
             ResultSet rs = selectStmt.executeQuery();
 
+            int mediaId;
             if (rs.next()) {
-                int id = rs.getInt("id");
+                mediaId = rs.getInt("id");
 
                 updateStmt.setDouble(1, size);
                 updateStmt.setTimestamp(2, convertToTimestamp(lastModified));
-                updateStmt.setInt(3, id);
+                updateStmt.setInt(3, mediaId);
                 updateStmt.executeUpdate();
+            } else {
+                insertStmt.setInt(1, userId);
+                insertStmt.setString(2, playlistName);
+                insertStmt.setDouble(3, size);
+                insertStmt.setTimestamp(4, convertToTimestamp(lastModified));
+                insertStmt.executeUpdate();
 
-                return id;
+                ResultSet generatedKeys = insertStmt.getGeneratedKeys();
+                if (generatedKeys.next()) {
+                    mediaId = generatedKeys.getInt(1);
+                } else {
+                    return -1;
+                }
             }
 
-            insertStmt.setString(1, playlistName);
-            insertStmt.setDouble(2, size);
-            insertStmt.setTimestamp(3, convertToTimestamp(lastModified));
-            insertStmt.executeUpdate();
-
-            ResultSet generatedKeys = insertStmt.getGeneratedKeys();
-            if (generatedKeys.next()) {
-                return generatedKeys.getInt(1);
+            if (hashtags != null && !hashtags.isEmpty()) {
+                linkHashtagsToMedia(conn, mediaId, hashtags);
             }
+
+            return mediaId;
         } catch (SQLException | ClassNotFoundException e) {
             e.printStackTrace();
         }
         return -1;
+    }
+
+    private static void linkHashtagsToMedia(Connection conn, int mediaId, String hashtags) throws SQLException {
+        String insertHashtagSQL = "INSERT IGNORE INTO hashtags (hashtag) VALUES (?)";
+        String selectHashtagSQL = "SELECT id FROM hashtags WHERE hashtag = ?";
+        String insertMediaHashtagSQL = "INSERT IGNORE INTO media_hashtags (media_id, hashtag_id) VALUES (?, ?)";
+
+        String[] hashtagArray = hashtags.split(",");
+        for (String hashtag : hashtagArray) {
+            hashtag = hashtag.trim().toLowerCase();
+            if (hashtag.isEmpty()) continue;
+
+            int hashtagId = -1;
+
+            try (PreparedStatement selectStmt = conn.prepareStatement(selectHashtagSQL)) {
+                selectStmt.setString(1, hashtag);
+                ResultSet rs = selectStmt.executeQuery();
+                if (rs.next()) {
+                    hashtagId = rs.getInt("id");
+                }
+            }
+
+            if (hashtagId == -1) {
+                try (PreparedStatement insertStmt = conn.prepareStatement(insertHashtagSQL, PreparedStatement.RETURN_GENERATED_KEYS)) {
+                    insertStmt.setString(1, hashtag);
+                    insertStmt.executeUpdate();
+                    ResultSet generatedKeys = insertStmt.getGeneratedKeys();
+                    if (generatedKeys.next()) {
+                        hashtagId = generatedKeys.getInt(1);
+                    }
+                }
+            }
+            if (hashtagId != -1) {
+                try (PreparedStatement insertMediaHashtagStmt = conn.prepareStatement(insertMediaHashtagSQL)) {
+                    insertMediaHashtagStmt.setInt(1, mediaId);
+                    insertMediaHashtagStmt.setInt(2, hashtagId);
+                    insertMediaHashtagStmt.executeUpdate();
+                }
+            }
+        }
     }
 
     private static int getVideoIdByName(String fileName) {
@@ -200,7 +257,8 @@ public class PlaylistServlet extends HttpServlet {
         try (Connection conn = DatabaseConnect.getConnection();
              PreparedStatement stmt = conn.prepareStatement(sql)) {
             stmt.setString(1, fileName);
-            System.out.println("Searching for video in DB: " + fileName);
+            System.out.println("Searching for video: " + fileName);
+
             ResultSet rs = stmt.executeQuery();
             if (rs.next()) {
                 int videoId = rs.getInt("id");
@@ -236,9 +294,9 @@ public class PlaylistServlet extends HttpServlet {
             insertStmt.setInt(2, videoId);
             int rowsAffected = insertStmt.executeUpdate();
             if (rowsAffected > 0) {
-                System.out.println("Successfully inserted Video ID " + videoId + " into Playlist ID " + playlistId);
+                System.out.println("Successfully added Video ID " + videoId + " to Playlist ID " + playlistId);
             } else {
-                System.err.println("Failed to insert Video ID " + videoId + " into Playlist ID " + playlistId);
+                System.err.println("Failed to insert Video ID " + videoId);
             }
 
         } catch (SQLException | ClassNotFoundException e) {
@@ -258,7 +316,7 @@ public class PlaylistServlet extends HttpServlet {
         try (Connection conn = DatabaseConnect.getConnection();
              PreparedStatement stmt = conn.prepareStatement(sql)) {
 
-            stmt.setString(1, "%" + searchQuery.toLowerCase() + "%"); // Search in lowercase
+            stmt.setString(1, "%" + searchQuery.toLowerCase() + "%");
             ResultSet rs = stmt.executeQuery();
 
             long currentTime = System.currentTimeMillis();
@@ -291,8 +349,5 @@ public class PlaylistServlet extends HttpServlet {
         response.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
         response.setHeader("Access-Control-Allow-Headers", "Content-Type");
     }
-
-
-
 
 }

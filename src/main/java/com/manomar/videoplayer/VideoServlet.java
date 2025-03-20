@@ -190,56 +190,64 @@
 
 
         private void handleUserInterests(int userId, int mediaId, int likeStatus, boolean removeRecommendation) {
+            String fetchHashtags_SQL = """
+        SELECT h.hashtag 
+        FROM media_hashtags mh
+        JOIN hashtags h ON mh.hashtag_id = h.id
+        WHERE mh.media_id = ?""";
 
-            String fetchHashtag_SQL = "SELECT hashtags FROM media WHERE id = ?";
-            String fetchInterestId_SQL = "SELECT id FROM available_interests WHERE interest_name = ?";
+            String fetchInterestId_SQL = "SELECT id FROM available_interests WHERE LOWER(interest_name) = LOWER(?)";
 
-            String insertUserInterest_SQL = "INSERT INTO user_interests (user_id, interest_id) SELECT ?, ? WHERE NOT " +
-                    "EXISTS (SELECT 1 FROM user_interests WHERE user_id = ? AND interest_id = ?)";
+            String insertUserInterest_SQL = """
+        INSERT INTO user_interests (user_id, interest_id)
+        SELECT ?, ? WHERE NOT EXISTS (
+            SELECT 1 FROM user_interests WHERE user_id = ? AND interest_id = ?
+        )
+    """;
 
             String deleteUserInterest_SQL = "DELETE FROM user_interests WHERE user_id = ? AND interest_id = ?";
             String deleteUserAllInterests_SQL = "DELETE FROM user_interests WHERE user_id = ?";
 
             try (Connection conn = DatabaseConnect.getConnection();
-                 PreparedStatement fetchHashtagsStmt = conn.prepareStatement(fetchHashtag_SQL)) {
+                 PreparedStatement fetchHashtagsStmt = conn.prepareStatement(fetchHashtags_SQL)) {
+
                 fetchHashtagsStmt.setInt(1, mediaId);
                 ResultSet rs = fetchHashtagsStmt.executeQuery();
 
-                if (rs.next()) {
-                    String hashtags = rs.getString("hashtags");
+                List<String> hashtags = new ArrayList<>();
+                while (rs.next()) {
+                    hashtags.add(rs.getString("hashtag").toLowerCase().trim());
+                }
 
-                    if (hashtags != null && !hashtags.isEmpty()) {
-                        String[] hashtagArray = hashtags.split(",");
+                if (!hashtags.isEmpty()) {
+                    for (String hashtag : hashtags) {
+                        try (PreparedStatement fetchInterestStmt = conn.prepareStatement(fetchInterestId_SQL)) {
+                            fetchInterestStmt.setString(1, hashtag);
 
-                        for (String hashtag : hashtagArray) {
-                            hashtag = hashtag.trim().toLowerCase();
-                            try (PreparedStatement fetchInterestStmt = conn.prepareStatement(fetchInterestId_SQL)) {
-                                fetchInterestStmt.setString(1, hashtag);
+                            ResultSet interestRs = fetchInterestStmt.executeQuery();
 
-                                ResultSet interestRs = fetchInterestStmt.executeQuery();
+                            if (interestRs.next()) {
+                                int interestId = interestRs.getInt("id");
 
-                                if (interestRs.next()) {
-                                    int interestId = interestRs.getInt("id");
-                                    if (likeStatus == 1) {
-                                        try (PreparedStatement insertStmt = conn.prepareStatement(insertUserInterest_SQL)) {
-                                            insertStmt.setInt(1, userId);
-                                            insertStmt.setInt(2, interestId);
-                                            insertStmt.setInt(3, userId);
-                                            insertStmt.setInt(4, interestId);
-                                            insertStmt.executeUpdate();
+                                if (likeStatus == 1) {
+                                    try (PreparedStatement insertStmt = conn.prepareStatement(insertUserInterest_SQL)) {
+                                        insertStmt.setInt(1, userId);
+                                        insertStmt.setInt(2, interestId);
+                                        insertStmt.setInt(3, userId);
+                                        insertStmt.setInt(4, interestId);
+                                        insertStmt.executeUpdate();
+                                    }
+                                } else if (likeStatus == -1) {
+                                    if (removeRecommendation) {
+                                        try (PreparedStatement deleteStmt = conn.prepareStatement(deleteUserInterest_SQL)) {
+                                            deleteStmt.setInt(1, userId);
+                                            deleteStmt.setInt(2, interestId);
+                                            deleteStmt.executeUpdate();
                                         }
-                                    } else if (likeStatus == -1) {
-                                        if (removeRecommendation) {
-                                            try (PreparedStatement deleteStmt = conn.prepareStatement(deleteUserInterest_SQL)) {
-                                                deleteStmt.setInt(1, userId);
-                                                deleteStmt.setInt(2, interestId);
-                                                deleteStmt.executeUpdate();
-                                            }
-                                        } else {
-                                            try (PreparedStatement deleteAllStmt = conn.prepareStatement(deleteUserAllInterests_SQL)) {
-                                                deleteAllStmt.setInt(1, userId);
-                                                deleteAllStmt.executeUpdate();
-                                            }
+                                    } else {
+                                        try (PreparedStatement deleteAllStmt = conn.prepareStatement(deleteUserAllInterests_SQL)) {
+                                            deleteAllStmt.setInt(1, userId);
+                                            deleteAllStmt.executeUpdate();
                                         }
                                     }
                                 }
@@ -260,7 +268,6 @@
 
             Connection conn = DatabaseConnect.getConnection();
             try {
-                // Fetch user interests
                 String interestQuery = """
             SELECT i.interest_name FROM user_interests ui 
             JOIN available_interests i ON ui.interest_id = i.id 
@@ -281,7 +288,6 @@
                 response.put("userInterests", interestArray);
                 interestStmt.close();
 
-                // Fetch videos with associated hashtags
                 String videoQuery = """
             SELECT m.id, m.file_name, m.size, m.last_modified, 
                    GROUP_CONCAT(h.hashtag ORDER BY h.hashtag SEPARATOR ', ') AS hashtags 
@@ -299,7 +305,7 @@
                     JSONObject video = new JSONObject();
                     int videoId = videoRs.getInt("id");
                     String fileName = videoRs.getString("file_name");
-                    String hashtags = videoRs.getString("hashtags"); // Normalized hashtags
+                    String hashtags = videoRs.getString("hashtags");
 
                     video.put("id", videoId);
                     video.put("fileName", fileName);
@@ -316,7 +322,7 @@
                         video.put("url", AppConfig.VIDEO_API + fileName);
                     }
 
-                    // Count matching interests with hashtags
+
                     int matchCount = 0;
                     if (hashtags != null) {
                         for (String hashtag : hashtags.toLowerCase().split(",\\s*")) {
@@ -334,7 +340,6 @@
                 }
                 videoStmt.close();
 
-                // Sort recommended videos by match count & last modified date
                 recommendedVideoMap.entrySet().stream()
                         .sorted((a, b) -> {
                             int matchCompare = Integer.compare(b.getValue(), a.getValue());
@@ -455,50 +460,50 @@
             response.setStatus(HttpServletResponse.SC_OK);
         }
 
-//        private void checkFile() {
-//            File directory = new File(AppConfig.VIDEO_DIRECTORY);
-//
-//            if (!directory.exists() || !directory.isDirectory()) {
-//                System.err.println("Error: Video directory not found: " + AppConfig.VIDEO_DIRECTORY);
-//                return;
-//            }
-//
-//            File[] files = directory.listFiles();
-//            if (files == null) {
-//                System.err.println("Error: Unable to list files in directory.");
-//                return;
-//            }
-//
-//            System.out.println("Checking files in directory...");
-//
-//            for (File file : files) {
-//                String fileName = file.getName();
-//
-//                if (fileName.toLowerCase().endsWith(".mp4")) {
-//                    double videoSize = file.length() / (1024.0 * 1024.0); // Convert bytes to MB
-//                    long lastModified = file.lastModified();
-//
-//
-//                    File subtitleFile = new File(AppConfig.VIDEO_DIRECTORY, fileName.replace(".mp4", ".vtt"));
-//                    boolean subtitleAvailable = subtitleFile.exists();
-//
-//
-//                    if (!VideoMetaData.isVideoInDatabase(fileName)) {
-//                        System.out.println("Inserting new video: " + fileName);
-//
-//                        int defaultUserId = getUsernameFromCookies(request);
-//                        String defaultHashtags = "#default";
-//
-//                        VideoMetaData.insertVideoMetadata(defaultUserId, fileName, videoSize, lastModified, subtitleAvailable, defaultHashtags);
-//                    } else {
-//                        System.out.println("Skipping duplicate video: " + fileName);
-//                    }
-//                } else if (fileName.toLowerCase().endsWith(".txt")) {
-//
-//                    PlaylistServlet.processPlaylistFile(file);
-//                }
-//            }
-//        }
+       /* private void checkFile() {
+            File directory = new File(AppConfig.VIDEO_DIRECTORY);
+
+            if (!directory.exists() || !directory.isDirectory()) {
+                System.err.println("Error: Video directory not found: " + AppConfig.VIDEO_DIRECTORY);
+                return;
+            }
+
+            File[] files = directory.listFiles();
+            if (files == null) {
+                System.err.println("Error: Unable to list files in directory.");
+                return;
+            }
+
+            System.out.println("Checking files in directory...");
+
+            for (File file : files) {
+                String fileName = file.getName();
+
+                if (fileName.toLowerCase().endsWith(".mp4")) {
+                    double videoSize = file.length() / (1024.0 * 1024.0); // Convert bytes to MB
+                    long lastModified = file.lastModified();
+
+
+                    File subtitleFile = new File(AppConfig.VIDEO_DIRECTORY, fileName.replace(".mp4", ".vtt"));
+                    boolean subtitleAvailable = subtitleFile.exists();
+
+
+                    if (!VideoMetaData.isVideoInDatabase(fileName)) {
+                        System.out.println("Inserting new video: " + fileName);
+
+                        int defaultUserId = getUsernameFromCookies(request);
+                        String defaultHashtags = "#default";
+
+                        VideoMetaData.insertVideoMetadata(defaultUserId, fileName, videoSize, lastModified, subtitleAvailable, defaultHashtags);
+                    } else {
+                        System.out.println("Skipping duplicate video: " + fileName);
+                    }
+                } else if (fileName.toLowerCase().endsWith(".txt")) {
+
+                    PlaylistServlet.processPlaylistFile(file);
+                }
+            }
+        }*/
 
 
         private void searchVideos(HttpServletResponse response, String searchQuery) throws IOException {
