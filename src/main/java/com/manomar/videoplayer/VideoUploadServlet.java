@@ -5,11 +5,16 @@ import jakarta.servlet.annotation.MultipartConfig;
 import jakarta.servlet.annotation.WebServlet;
 import jakarta.servlet.http.*;
 import org.json.JSONObject;
+
 import java.io.*;
 import java.sql.*;
+import java.text.SimpleDateFormat;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.util.*;
 import java.util.Date;
 
-    @WebServlet("/VideoUploadServlet")
+@WebServlet("/VideoUploadServlet")
 @MultipartConfig(fileSizeThreshold = 1024 * 1024 * 10,
         maxFileSize = 1024 * 1024 * 500,
         maxRequestSize = 1024 * 1024 * 600)
@@ -24,6 +29,7 @@ public class VideoUploadServlet extends HttpServlet {
         try {
             Part myFile = request.getPart("video");
             String hashtags = request.getParameter("hashtags");
+            String scheduledTime = request.getParameter("scheduledTime");
 
             if (myFile == null || myFile.getSize() == 0) {
                 response.sendError(HttpServletResponse.SC_BAD_REQUEST, "No video file uploaded.");
@@ -32,18 +38,7 @@ public class VideoUploadServlet extends HttpServlet {
 
             String fileName = myFile.getSubmittedFileName();
             double fileSize = myFile.getSize() / (1024.0 * 1024.0);
-
             long lastModified = new Date().getTime();
-
-            File saveFile = new File(VIDEO_DIRECTORY, fileName);
-            try (InputStream fileContent = myFile.getInputStream();
-                 FileOutputStream fos = new FileOutputStream(saveFile)) {
-                byte[] buffer = new byte[1024];
-                int bytesRead;
-                while ((bytesRead = fileContent.read(buffer)) != -1) {
-                    fos.write(buffer, 0, bytesRead);
-                }
-            }
 
             String username = getUsernameFromCookies(request);
             if (username == null) {
@@ -56,22 +51,73 @@ public class VideoUploadServlet extends HttpServlet {
                 response.sendError(HttpServletResponse.SC_BAD_REQUEST, "Invalid user.");
                 return;
             }
-            boolean subtitleAvailable = new File(AppConfig.VIDEO_DIRECTORY + fileName.replace(".mp4", ".vtt")).exists();
 
-            if (fileName.toLowerCase().endsWith(".mp4")) {
-                VideoMetaData.insertVideoMetadata(userId, fileName, fileSize, lastModified, subtitleAvailable, hashtags);
-            }  else if (fileName.toLowerCase().endsWith(".txt")) {
-                PlaylistServlet.processPlaylistFile(userId,saveFile,hashtags);
+            boolean subtitleAvailable = new File(VIDEO_DIRECTORY + fileName.replace(".mp4", ".vtt")).exists();
+            File saveFile = new File(VIDEO_DIRECTORY, fileName);
+
+            saveVideoFile(myFile, saveFile);
+
+            if ("now".equals(scheduledTime)) {
+                insertVideoMetadata(userId, fileName, fileSize, lastModified, subtitleAvailable, hashtags);
+                sendResponse(response, "Video uploaded successfully..........");
+            } else {
+                scheduleUpload(saveFile, scheduledTime, userId, fileName, fileSize, lastModified, subtitleAvailable, hashtags);
+                sendResponse(response, "Video sche  dulling upload at: " + scheduledTime);
             }
-
-            JSONObject jsonResponse = new JSONObject();
-            jsonResponse.put("message", "Video uploaded successfully.");
-            response.getWriter().write(jsonResponse.toString());
 
         } catch (Exception e) {
             e.printStackTrace();
             response.sendError(HttpServletResponse.SC_INTERNAL_SERVER_ERROR, "Error processing video upload.");
         }
+    }
+
+    private void saveVideoFile(Part filePart, File saveFile) throws IOException {
+        try (InputStream fileContent = filePart.getInputStream();
+             FileOutputStream fos = new FileOutputStream(saveFile)) {
+            byte[] buffer = new byte[1024];
+            int bytesRead;
+            while ((bytesRead = fileContent.read(buffer)) != -1) {
+                fos.write(buffer, 0, bytesRead);
+            }
+        }
+    }
+
+    private void scheduleUpload(File saveFile, String scheduledTime, int userId, String fileName,
+                                double fileSize, long lastModified, boolean subtitleAvailable, String hashtags) {
+        try {
+            LocalDateTime scheduleDateTime = LocalDateTime.parse(scheduledTime);
+            long delay = java.time.Duration.between(LocalDateTime.now(), scheduleDateTime).toMillis();
+
+            new Timer().schedule(new TimerTask() {
+                @Override
+                public void run() {
+                    try {
+                        if (!saveFile.exists()) {
+                            System.err.println("schedule failed....no file found..!");
+                            return;
+                        }
+                        insertVideoMetadata(userId, fileName, fileSize, lastModified, subtitleAvailable, hashtags);
+                        System.out.println("Scheduled video metadata inserted at: " + scheduledTime);
+                    } catch (Exception e) {
+                        e.printStackTrace();
+                    }
+                }
+            }, delay);
+
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    private void insertVideoMetadata(int userId, String fileName, double fileSize, long lastModified,
+                                     boolean subtitleAvailable, String hashtags) {
+        VideoMetaData.insertVideoMetadata(userId, fileName, fileSize, lastModified, subtitleAvailable, hashtags);
+    }
+
+    private void sendResponse(HttpServletResponse response, String message) throws IOException {
+        JSONObject jsonResponse = new JSONObject();
+        jsonResponse.put("message", message);
+        response.getWriter().write(jsonResponse.toString());
     }
 
     public static String getUsernameFromCookies(HttpServletRequest request) {
